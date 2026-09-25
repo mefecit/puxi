@@ -15,9 +15,13 @@ MIDI mapping need no introduction).
 
 **Minimal patch shell + all the logic in JavaScript.**
 
-- `device/puxi-shell.maxpat` — only about 10 objects: `midiin/midiout`,
-  `live.thisdevice`, `metro 16n @quantize 16n @active 1`, `v8`, `makenote`,
-  `noteout`, `v8ui`. Add a Max object only when JS can't do the job (audio-rate
+- `device/puxi-shell.maxpat` — about 40 objects (37 at the top level + the 4 inside
+  the `[p pstate]` sub-patcher, comments not counted). The core is about 10:
+  `midiin/midiout`, `live.thisdevice`, `metro 16n @quantize 16n @active 1`, `v8`,
+  `[route note gui param]`, `makenote`, `noteout`, `v8ui` (+ the `init`/`tick`
+  messages). The rest is plumbing: the 8 exposed Live params (`live.toggle`/
+  `live.numbox`, each with its `prepend` pair) behind one `route`, and the `[p pstate]`
+  persistence sub-patcher. Add a Max object only when JS can't do the job (audio-rate
   timing, MIDI I/O, native `live.*` UI).
 - `device/puxi-engine.js` — the `[v8]` object: pattern state, step logic, the Live
   API (LiveAPI), GUI communication.

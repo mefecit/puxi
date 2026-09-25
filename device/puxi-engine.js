@@ -42,7 +42,7 @@ outlets = 1; // SINGLE outlet on purpose. A v8's outlet count is set by the scri
 // Outlet 0 carries tagged messages, split downstream by [route note gui param]:
 //   "note <pitch> <vel> <dur>"  -> [makenote]      (MIDI)
 //   "gui <...>"                 -> [v8ui]           (cell/playhead/label/color/view/clear)
-//   "param <...>"              -> Live params       (follow/start/end/block)
+//   "param <...>"              -> Live params       (follow/start/end/vel/prob/length/plock1/plock2)
 function emit(tag, a) { var m = [0, tag]; for (var i = 0; i < a.length; i++) m.push(a[i]); outlet.apply(null, m); }
 function note()  { emit("note",  arguments); }
 function gui()   { emit("gui",   arguments); }
@@ -51,7 +51,7 @@ function param() { emit("param", arguments); }
 // ---- Constants ----------------------------------------------------
 var VIEW_TRACKS = 8;          // visible rows
 var VIEW_STEPS = 8;           // visible columns (one step block) — matches Push 8x8
-var TOTAL_STEPS = 64;         // Phase 1: pattern length = 4 blocks of 16
+var TOTAL_STEPS = 64;         // pattern length = 8 blocks of 8 steps
 var NOTE_LO = 36;             // lowest addressable MIDI note (C1)
 var NUM_NOTES = 32;           // addressable note rows -> 4 banks of 8 (C1..G3)
 var DEFAULT_VELOCITY = 100;
@@ -640,9 +640,8 @@ function makeArrowCb(axis, delta) {
 // (orange/yellow/turquoise/purple/pink). The full 128-color palette is only readable
 // by sysex from the device (impossible from an M4L device + phone photos are too
 // imprecise), so we quantize each chain color to the NEAREST of these known-correct
-// indices. Trade-offs: a small set of correct hues (very close shades may collapse),
-// and no per-velocity dimming on the pads (an index has a fixed brightness — velocity
-// brightness stays in the Live GUI).
+// indices. Trade-off: a small set of correct hues (very close shades may collapse).
+// Velocity brightness comes from darker same-hue indices per anchor (VEL_LADDER, below).
 // Match by HUE (not raw RGB distance, which sends medium blues to purple). Each anchor
 // is a known-correct Push pad index at its hue (degrees); near-neutral colors go white.
 var PUSH_HUE_ANCHORS = { "127": 0, "3": 33, "8": 55, "126": 120, "125": 240, "22": 268, "25": 330 };
@@ -673,9 +672,9 @@ function nearestPaletteIndex(r, g, b) {
 // LED output: mirror the visible 8x8 window onto the pads. col = step, row = track.
 // An in-loop active step takes its row's Drum Rack color (quantized to the nearest
 // known palette hue); out-of-loop steps are grayed; rows with no chain color fall
-// back to the fixed PUSH_ON color. (Velocity -> brightness is GUI-only: the Push API
-// gives only a fixed-brightness color index per pad — a 4th 'brightness' arg to
-// send_value is ignored, verified on hardware.)
+// back to the fixed PUSH_ON color. Velocity -> brightness picks a darker same-hue palette
+// index (VEL_LADDER): the Push API gives only a fixed-brightness color index per pad — a
+// 4th 'brightness' arg to send_value is ignored, verified on hardware.
 // Piano-roll orientation (mirrors the GUI): view-row t (t=0 lowest note) maps to the
 // BOTTOM physical pad row. The press handler applies the same map (it is its own
 // inverse). If the hardware turns out flipped the other way, change this one line.
@@ -917,7 +916,7 @@ function updateDoubleLed() {
 
 // Scene-button LEDs mirror mute/solo: on = the aligned row will play (audible), off =
 // muted or silenced by a solo elsewhere. While Mute/Solo is held, all turn fully on (a
-// "pick a row" hint). Scene si (physical, 0 = top) -> view row pushRow(si). Refreshed
+// "pick a row" hint). Scene si (physical, 0 = bottom) -> view row sceneRow(si). Refreshed
 // from sendMuteSolo (state change) and pushRenderGrid (grab / view change).
 function updateSceneLeds() {
     if (!pushGrabbed || !pushSceneBtns) return;
@@ -1408,10 +1407,11 @@ function ratchethit(t, s, vel) {
     pushSnapshot();
 }
 
-// Scene-launch button press: only acts while Mute or Solo is held (it's a modifier
-// combo). Mute held -> toggle mute; Solo held -> exclusive solo; no modifier -> ignored
-// (we own the button, no native scene launch while focused). si = physical scene row
-// (0 = top) -> view row pushRow(si), same flip as the pads.
+// Scene-launch button press. With a modifier held: Repeat -> pick the ratchet division;
+// Delete -> clear the aligned row; Mute -> toggle mute; Solo -> exclusive solo. With no
+// modifier, a HOLD targets the row for the loop/Lock encoders (below). We own the button,
+// so there's no native scene launch while focused. si = physical scene (0 = bottom) ->
+// view row sceneRow(si); the scenes run opposite to the pad rows, so no pushRow flip.
 function makeSceneCb(si) {
     return function (args) {
         if (!pushGrabbed || !args || args[0] !== "value") return;
@@ -1812,7 +1812,8 @@ function tick() {
             // Probability: a fresh random roll per trigger -> statistical (≈ p% of hits),
             // not a fixed every-other pattern. p=100 always (rand<100), p=0 never.
             // Length: note duration = gate% x one step (tempo-aware) -> staccato / tie.
-            // Ratchet: R>1 subdivides the step into R evenly-spaced hits (one prob roll each).
+            // Ratchet: R>1 subdivides the step into R evenly-spaced hits (one prob roll for
+            // the whole step: all R hits play or none do).
             if (vel > 0 && audible(r) && Math.random() * 100 < effProb(r, step)) {
                 applyPlocks(r, step); // p-lock: set the pad's params for this trig before it sounds
                 playStep(NOTE_LO + r, effVel(r, step), effGate(r, step), ratchet[r][step], stepMs, swingMs);
@@ -1881,7 +1882,7 @@ function nav(axis, delta) {
     } else if (axis === "steps") {
         followPlay = false; // manual step navigation turns follow off
         stepBase = clamp(stepBase + delta * VIEW_STEPS, 0, TOTAL_STEPS - VIEW_STEPS);
-        sendFullState(); // stepBase persists via the Block param, not PuxiState
+        sendFullState(); // stepBase is not persisted (a reopened Set starts on block 1)
     }
 }
 
@@ -1890,7 +1891,7 @@ function follow(on) {
     if (arguments.length === 0) followPlay = !followPlay;
     else followPlay = (Number(on) !== 0);
     if (followPlay && lastStep >= 0) stepBase = blockOf(lastStep); // snap now
-    sendFullState(); // also re-emits params (follow + Block); they persist via live.* params
+    sendFullState(); // also re-emits the params (Follow persists via its live.* param)
 }
 
 // The loop the encoders/ruler currently edit: the global loop, or the selected note's
@@ -2041,7 +2042,7 @@ function setprob(t, s, p) {
     scheduleProbSnap(); // debounce: a whole drag = one undo step
 }
 
-// Per-cell note length, % of a step (5..800). GUI horizontal-drag on a note's right zone /
+// Per-cell note length, % of a step (5..6400). GUI horizontal-drag on a note's right zone /
 // Push Length encoder. Repaints the pad tail region.
 var gateSnapTask = null;
 function scheduleGateSnap() {

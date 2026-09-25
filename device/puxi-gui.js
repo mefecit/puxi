@@ -696,10 +696,10 @@ function loadbang() {
     requestState();
 }
 
-// autowatch hot-reloads this file on save during development but does NOT
-// re-fire loadbang(). Re-request a beat after (re)load so the grid repopulates
-// without reloading the whole device. Deferred so the outlet is wired; guarded
-// so a missing Task API can never break the GUI.
+// Safety net for the loadbang() request: the engine may not be ready to answer yet
+// (it can finish loading after this script on a Set reopen). Re-request a beat after
+// this script loads, retrying a few times, so the grid always populates. Deferred so
+// the outlet is wired; guarded so a missing Task API can never break the GUI.
 try {
     var bootRefreshN = 0;
     var bootRefresh = new Task(function () {

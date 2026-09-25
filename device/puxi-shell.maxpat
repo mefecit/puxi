@@ -266,7 +266,7 @@
       260,
       20
      ],
-     "text": "GUI: 8x16 grid (v8ui, presentation mode)"
+     "text": "GUI: 8x8 grid (v8ui, presentation mode)"
     }
    },
    {
