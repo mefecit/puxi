@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<!--
+  Puxi landing page — static, for GitHub Pages (Settings > Pages > Source: main, /docs).
+  BEFORE PUBLISHING, replace the 3 placeholders below:
+    1. YOUTUBE_ID   — the id of your demo video (the part after ?v= in the URL)
+    2. the repo URL — https://github.com/mefecit/puxi   (adjust the owner/name)
+    3. the download — points to the GitHub Releases page by default; swap for
+                      maxforlive.com / Gumroad if you prefer.
+  Search this file for "REPLACE" to find them.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Puxi — drum step sequencer for Ableton Live &amp; Push 3</title>
+  <meta name="description" content="Puxi is an 8-track drum step sequencer for Ableton Live 12 (Max for Live), built for deep Live and Push 3 integration. Free and open source (GPLv3)." />
+  <!-- Social preview (used when the link is shared) -->
+  <meta property="og:title" content="Puxi — drum step sequencer for Ableton Live &amp; Push 3" />
+  <meta property="og:description" content="8-track drum step sequencer for Ableton Live 12 and Push 3. Free and open source." />
+  <meta property="og:type" content="website" />
+  <style>
+    :root{
+      --bg:#0d0d10; --panel:#16161b; --panel2:#1d1d24; --line:#2a2a33;
+      --text:#e9e9ec; --muted:#9a9aa4; --accent:#35e06a;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0}
+    body{
+      background:var(--bg); color:var(--text);
+      font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      -webkit-font-smoothing:antialiased;
+    }
+    a{color:var(--accent); text-decoration:none}
+    a:hover{text-decoration:underline}
+    .wrap{max-width:860px; margin:0 auto; padding:0 20px}
+    /* header */
+    header{padding:64px 0 40px; text-align:center}
+    .cells{display:flex; gap:6px; justify-content:center; margin-bottom:26px}
+    .cells span{width:16px; height:16px; border-radius:3px; opacity:.9}
+    h1{font-size:64px; letter-spacing:-2px; margin:0 0 10px; font-weight:800}
+    .tag{font-size:20px; color:var(--muted); margin:0 auto 8px; max-width:620px}
+    .badges{margin-top:18px}
+    .badges img{vertical-align:middle}
+    /* buttons */
+    .btns{display:flex; gap:14px; justify-content:center; flex-wrap:wrap; margin:30px 0 6px}
+    .btn{
+      display:inline-block; padding:13px 24px; border-radius:10px; font-weight:600;
+      border:1px solid var(--line); background:var(--panel2); color:var(--text);
+    }
+    .btn:hover{text-decoration:none; border-color:#3a3a46}
+    .btn.primary{background:var(--accent); color:#06210f; border-color:var(--accent)}
+    .btn.primary:hover{filter:brightness(1.06)}
+    .sub{color:var(--muted); font-size:14px; margin-top:8px}
+    /* video */
+    .video{position:relative; padding-bottom:56.25%; height:0; margin:40px 0;
+      border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#000}
+    .video iframe{position:absolute; inset:0; width:100%; height:100%; border:0}
+    /* sections */
+    section{padding:26px 0}
+    h2{font-size:24px; margin:0 0 18px}
+    .grid{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+    .card{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px 18px}
+    .card h3{margin:0 0 4px; font-size:16px}
+    .card p{margin:0; color:var(--muted); font-size:14.5px}
+    ol.steps{padding-left:20px; color:var(--muted)}
+    ol.steps li{margin:6px 0}
+    ol.steps code{background:var(--panel2); padding:2px 6px; border-radius:5px; color:var(--text); font-size:13.5px}
+    footer{border-top:1px solid var(--line); margin-top:40px; padding:28px 0 56px;
+      color:var(--muted); font-size:14px; text-align:center}
+    @media (max-width:640px){
+      h1{font-size:46px}
+      .grid{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <header>
+      <div class="cells">
+        <span style="background:#f25a5a"></span>
+        <span style="background:#f2992e"></span>
+        <span style="background:#f2d94d"></span>
+        <span style="background:#6fd968"></span>
+        <span style="background:#4dcccc"></span>
+        <span style="background:#5a8cf2"></span>
+        <span style="background:#a673f2"></span>
+        <span style="background:#f272bf"></span>
+      </div>
+      <h1>Puxi</h1>
+      <p class="tag">An 8-track drum step sequencer for Ableton Live 12, built for deep
+        Live and <strong>Push 3</strong> integration.</p>
+
+      <div class="btns">
+        <!-- REPLACE: download target (GitHub Releases by default) -->
+        <a class="btn primary" href="https://github.com/mefecit/puxi/releases/latest">Download</a>
+        <!-- REPLACE: repo URL -->
+        <a class="btn" href="https://github.com/mefecit/puxi">View on GitHub</a>
+      </div>
+      <div class="sub">Free &amp; open source · requires Ableton Live 12 (Max for Live)</div>
+
+      <div class="badges">
+        <a href="https://github.com/mefecit/puxi/blob/main/LICENSE">
+          <img src="https://img.shields.io/badge/License-GPLv3-blue.svg" alt="License: GPL v3" />
+        </a>
+      </div>
+    </header>
+
+    <!-- REPLACE: YOUTUBE_ID with your demo video id -->
+    <div class="video">
+      <iframe src="https://www.youtube-nocookie.com/embed/YOUTUBE_ID"
+              title="Puxi demo" loading="lazy"
+              allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowfullscreen></iframe>
+    </div>
+
+    <section>
+      <h2>What it does</h2>
+      <div class="grid">
+        <div class="card"><h3>Multi-track grid</h3><p>All 8 drum tracks at once, 64 steps, with Drum Rack names and colors.</p></div>
+        <div class="card"><h3>Probability</h3><p>Per-step chance to play, plus a non-destructive global offset.</p></div>
+        <div class="card"><h3>Length &amp; ties</h3><p>Staccato to multi-step ties that spill over into the next pages.</p></div>
+        <div class="card"><h3>Ratcheting</h3><p>2–8 evenly-spaced sub-hits per step, a roll on the grid.</p></div>
+        <div class="card"><h3>Polyrhythm</h3><p>Per-track loop lengths with independent playheads.</p></div>
+        <div class="card"><h3>Groove &amp; swing</h3><p>Follows Live's Groove and Swing amounts, live and on export.</p></div>
+        <div class="card"><h3>Parameter locks</h3><p>Lock two of a drum pad's device params per step, Elektron-style.</p></div>
+        <div class="card"><h3>Full Push 3</h3><p>Pads, encoders, and buttons — tethered and standalone.</p></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Get started</h2>
+      <ol class="steps">
+        <li>Download <code>Puxi.amxd</code>, move it into your Live User Library, and drag it onto a MIDI track.</li>
+        <li>Add a <strong>Drum Rack</strong> after Puxi on the same track.</li>
+        <li>Hit play — and reach for Push 3 if you have one.</li>
+      </ol>
+      <!-- REPLACE: repo URL -->
+      <p><a href="https://github.com/mefecit/puxi/blob/main/docs/MANUAL.md">Read the full manual →</a></p>
+    </section>
+
+    <section>
+      <h2>FAQ</h2>
+      <div class="grid">
+        <div class="card"><h3>What do I need?</h3><p>Ableton Live 12 with Max for Live (included in Suite, an add-on for Standard). Puxi is a single .amxd.</p></div>
+        <div class="card"><h3>Do I need a Push?</h3><p>No — the mouse GUI does everything. A Push 3 adds hands-on pads, encoders and buttons.</p></div>
+        <div class="card"><h3>Push 3 standalone?</h3><p>Yes. Transfer the device to the Push and it runs without a computer. Push 2 is untested.</p></div>
+        <div class="card"><h3>How much?</h3><p>Free. No pro version, no unlock, no email wall. Open source under GPLv3.</p></div>
+        <div class="card" style="grid-column:1 / -1"><h3>Was it made with AI?</h3><p>Yes. Puxi was designed by a producer and tested in Live and on a Push 3; Claude Code, an AI coding assistant, wrote most of the code. <a href="https://github.com/mefecit/puxi#how-puxi-was-made">How Puxi was made →</a></p></div>
+      </div>
+    </section>
+
+    <footer>
+      Puxi — free software under the
+      <!-- REPLACE: repo URL -->
+      <a href="https://github.com/mefecit/puxi/blob/main/LICENSE">GNU GPL v3</a>.
+      © 2026 mefecit.
+    </footer>
+
+  </div>
+</body>
+</html>

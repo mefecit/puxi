@@ -1,0 +1,19 @@
+# macOS noise
+.DS_Store
+
+# Personal notes, not part of the device
+*.rtf
+
+# Editor / assistant workspace state
+.claude/
+
+# Scratch / quarantine (e.g. stale collected copies moved out of the way)
+_attic/
+
+# Frozen Max for Live devices (binary). Source of truth is the .maxpat + .js;
+# the frozen .amxd is generated locally (build-amxd.py / Max Freeze) and used
+# for distribution / Push 3 standalone transfer — never committed. A frozen .amxd
+# embeds a copy of the .js, so it also carries whatever the comments said at freeze time.
+*.amxd
+*.amxd.prev
+versions/
