@@ -67,6 +67,9 @@ not strictly every other time, but averaging out to half over many repeats.
 - **On Push:** hold a pad, then turn the **Prob** encoder (the fifth, shown on the
   display) to set that note's probability, and release. A quick tap toggles the
   step; holding it is what enters probability mode.
+- **One row at once (Push):** hold the row's **scene button**, then turn the **Prob**
+  encoder. It sets every note of that row to the same probability. While the scene is
+  held, the display shows the value most of the row's notes share.
 - A note that is (re)entered always starts at **100%**: if you remove a
   probabilistic note and add it back, it is back to 100%. Probability belongs to
   the note, not to the cell.
@@ -280,8 +283,9 @@ Order: **Follow · Loop Start · Loop End · Vel · Prob · Length · Lock 1 · 
   follows); with no pad held, sets the global velocity — an offset that raises or
   lowers all notes (non-destructive, neutral at the center), reflected in the sound, the
   pad and grid brightness, and exported clips.
-- **Encoder 5 — Prob:** with a pad held, sets that note's probability; with no pad
-  held, sets the global probability (all notes, non-destructive offset — see Chapter 2).
+- **Encoder 5 — Prob:** with a pad held, sets that note's probability; with a scene
+  button held, sets the probability of every note in that row; with nothing held, sets
+  the global probability (all notes, non-destructive offset — see Chapter 2).
 - **Encoder 6 — Length:** with a pad held, sets that note's length (up to 6400% = 64
   steps, even across pages); with no pad held, sets the global length (all notes,
   non-destructive offset).
@@ -369,7 +373,8 @@ device on the pad (Macro 1 and 2 if it is a rack), Elektron-style.
 
 - **Lock a step:** hold a sequenced pad, then turn Encoders 7/8 (Lock 1 / Lock 2).
   At that step, the parameter takes the value you set (you hear the change right away). Each step can
-  have its own values.
+  have its own values. A lock affects its own step only: on the row's next note without a
+  lock, and when you stop playback, the parameter goes back to the value you gave it.
 - **Shift a whole row** (like global probability): hold a **scene button**, then turn
   Encoders 7/8. This is an offset that moves all the row's notes — unlocked steps
   follow the value, locked steps are shifted by the same amount. Recenter (value 64)
@@ -404,6 +409,7 @@ encoders, display, and Accent all work without a computer.
 | Set velocity | drag ↑/↓ on the cell | pad hit strength, or hold pad + **Vel** encoder (4) |
 | Global velocity (all notes) | — | **Vel** encoder (4), no pad held |
 | Set probability | drag ←/→ (left part) | hold pad + **Prob** encoder (5) |
+| Probability of a whole row | — | hold **scene** + **Prob** encoder (5) |
 | Global probability (all notes) | — | **Prob** encoder (5), no pad held |
 | Set length / tie | drag ←/→ (right third) | hold pad + **Length** encoder (6) |
 | Global length (all notes) | — | **Length** encoder (6), no pad held |

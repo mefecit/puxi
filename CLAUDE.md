@@ -311,6 +311,14 @@ Discovered/tested on the dev machine. Recipe for the arrows (also applies to the
   `pprob` with no pad held), **not** in PuxiState or `initPattern` (don't reset it to 100 there:
   the param-restore / pstate-restore race would overwrite it). `sendParams` re-emits `prob` only
   if `!probTarget` (don't overwrite the display during a hold).
+- **ROW probability — Prob encoder with a scene held (2026-09-26).** Target priority in `pprob`:
+  held pad (`probTarget`) → held scene (`pushSceneSel`) → global. With a scene held, `setRowProb`
+  sets the **own** probability of every existing note of that row (absolute, like the pad edit
+  but for the whole row; a note entered later still starts at 100). The encoder shows
+  `rowProbDisplay(r)` = the value most of the row's notes share (100 for an empty row);
+  `probDisplay()` picks row vs global and is used by `makeSceneCb` (press/release),
+  `exitProbMode` and `sendParams`. Undo via `scheduleProbSnap`. Vel and Length stay
+  note/global only.
 - **Per-step length/gate — pad hold + 6th encoder (`gate[r][s]`, 5..6400%, 2026-07-02).** A
   note holds `gate%` of a step's duration: **100 = one step** (default), **<100** = staccato,
   **>100 = tie/legato** that **spills over** into the following steps (and pages) — up to **6400%**
@@ -385,7 +393,15 @@ Discovered/tested on the dev machine. Recipe for the arrows (also applies to the
   global probability: `effProb`). **Playback**: `applyPlocks(r,step)` (in `tick`, just before the
   note sounds) writes `eff = clamp((step lock if set, else 64) + (offset − 64), 0, 127)` to the
   param — **opt-in**: does nothing if there is no lock **and** the offset is neutral (rows
-  without a p-lock are never driven). `pplock1/pplock2` (→ `pplock(i,v)`) edit whichever target is held
+  without a p-lock are never driven). **A lock affects its own step only (fixed 2026-09-26):**
+  before a lock first moves a param, `overrideParam` saves the param's own value in
+  `plockHome[r][i]` (`plockOver[r][i]` = true); the row's next **played** note with neither a
+  lock nor an offset calls `restoreParam` (puts the saved value back), and stopping playback
+  restores all of them (`restoreAllParams`, run from a 10 ms `Task` because Live refuses
+  parameter changes made inside the `is_playing` notification). Before this fix the locked value
+  stuck, so it sounded as if the lock applied to the whole row. `scanDrumRack` clears the saved
+  values (they belong to the previous rack's params). `applyLockLive` goes through
+  `overrideParam` too. `pplock1/pplock2` (→ `pplock(i,v)`) edit whichever target is held
   (pad → step, scene → offset), `applyLockLive` applies it live (you hear it). `showLocks` shows
   the value (the lock if set, otherwise the param's current value). **Belongs to the note**
   (`resetProbOnEntry` resets the step lock to -1 → a fresh note follows the row offset);

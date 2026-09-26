@@ -80,6 +80,8 @@ var PLOCK_MID = 64;    // neutral value of a per-row offset (like gProb's 100): 
 var plock = [];        // plock[r][step] = [a, b] per-STEP lock, normalized 0..127, -1 = no lock
 var plockBase = [];    // plockBase[r] = [a, b] per-ROW offset, 0..127 (64 = neutral) -> affects ALL notes
 var padParam = [];     // padParam[r] = [{api,min,max,name}, …] LiveAPI handles for the pad's params (or null)
+var plockHome = [];    // plockHome[r][i] = the pad param's OWN value (real units), saved before a lock moved it
+var plockOver = [];    // plockOver[r][i] = true while a lock holds that param away from its own value
 var noteBase = 0;      // top visible note row (a multiple of VIEW_TRACKS)
 var stepBase = 0;      // leftmost visible step (a multiple of VIEW_STEPS)
 var gLoopS = 0, gLoopE = 8; // GLOBAL loop region; a note follows it unless it's custom
@@ -239,6 +241,7 @@ function findDrumIn(path) {
 // pad's first-device parameter handles for the p-lock (parameters 1 & 2 = Macro 1/2 for a rack).
 function scanDrumRack() {
     rowName = []; rowColor = []; padParam = [];
+    plockHome = []; plockOver = []; // saved values belong to the old rack's params
     var rack = findDrumRack();
     for (var r = 0; r < NUM_NOTES; r++) {
         rowName[r] = null; rowColor[r] = null; padParam[r] = null;
@@ -284,23 +287,50 @@ function valToNorm(h, v) {
     return clamp(Math.round((v - h.min) / (h.max - h.min) * 127), 0, 127);
 }
 
+// A lock applies to its own step only: before a lock first moves a pad param, save the param's
+// own value, and put it back on the next step that has no lock (or when playback stops).
+function overrideParam(r, i, h, real) {
+    if (!plockHome[r]) { plockHome[r] = []; plockOver[r] = []; }
+    if (!plockOver[r][i]) {
+        var own = parseFloat(h.api.get("value"));
+        plockHome[r][i] = isNaN(own) ? real : own;
+        plockOver[r][i] = true;
+    }
+    h.api.set("value", real);
+}
+function restoreParam(r, i, h) {
+    if (!plockOver[r] || !plockOver[r][i]) return;
+    plockOver[r][i] = false;
+    h.api.set("value", plockHome[r][i]);
+}
+function restoreAllParams() {
+    for (var r = 0; r < NUM_NOTES; r++) {
+        var hs = padParam[r];
+        if (!hs) continue;
+        for (var i = 0; i < hs.length; i++) { try { restoreParam(r, i, hs[i]); } catch (e) {} }
+    }
+}
+
 // Playback: set the pad's target params to this step's lock (otherwise the row offset) right before
-// the note sounds. Only touches params that actually have a lock/base (opt-in per row).
+// the note sounds. A step with neither puts back any value an earlier lock moved (opt-in per row:
+// rows never locked are never touched).
 function applyPlocks(r, step) {
     var hs = padParam[r];
     if (!hs) return;
     for (var i = 0; i < hs.length; i++) {
         var own = plock[r][step][i];          // per-step lock, -1 = none
         var off = plockBase[r][i] - PLOCK_MID; // per-row offset (affects all notes; 0 = neutral)
-        if (own < 0 && off === 0) continue;    // nothing set for this cell -> leave the param alone
-        var eff = clamp((own >= 0 ? own : PLOCK_MID) + off, 0, 127);
-        try { hs[i].api.set("value", plockToVal(hs[i], eff)); } catch (e) {}
+        try {
+            if (own < 0 && off === 0) { restoreParam(r, i, hs[i]); continue; }
+            var eff = clamp((own >= 0 ? own : PLOCK_MID) + off, 0, 127);
+            overrideParam(r, i, hs[i], plockToVal(hs[i], eff));
+        } catch (e) {}
     }
 }
 // Apply one param live while editing (so you hear it as you turn the encoder).
 function applyLockLive(r, i, norm) {
     var hs = padParam[r];
-    if (hs && hs[i]) { try { hs[i].api.set("value", plockToVal(hs[i], norm)); } catch (e) {} }
+    if (hs && hs[i]) { try { overrideParam(r, i, hs[i], plockToVal(hs[i], norm)); } catch (e) {} }
 }
 // Show a step's locks (or a row's offset) on the Lock encoders (7/8). A stored value shows
 // as-is; no lock -> the target's CURRENT value (so the encoder starts where the param is).
@@ -1246,13 +1276,14 @@ function enterProbMode(t, s) {
 function exitProbMode() {
     probTarget = null;
     param("vel", gVel);      // encoders fall back to the GLOBAL vel / prob / length display
-    param("prob", gProb);
+    param("prob", probDisplay()); // (or the held scene's row, for Prob)
     param("length", gGate);
 }
-// Prob param (5th encoder). A pad HELD -> edits that cell's own probability. NO pad held
-// -> edits the GLOBAL probability (an offset on every note; own values untouched, so
-// raising it back restores them). The global rides the live.* param itself: persisted by
-// Live with the Set (value restored on reload lands here) — not part of PuxiState.
+// Prob param (5th encoder). A pad HELD -> edits that cell's own probability. A scene HELD ->
+// sets the own probability of every note in that row. Nothing held -> edits the GLOBAL
+// probability (an offset on every note; own values untouched, so raising it back restores
+// them). The global rides the live.* param itself: persisted by Live with the Set (value
+// restored on reload lands here) — not part of PuxiState.
 function pprob(v) {
     var nv = clamp(Math.round(Number(v)), 0, 100);
     if (probTarget) { // held pad: edit the note's own prob
@@ -1265,11 +1296,42 @@ function pprob(v) {
         scheduleProbSnap();
         return;
     }
+    if (pushSceneSel >= 0) { setRowProb(pushSceneSel, nv); return; } // held scene: the whole row
     if (nv === gProb) return; // echo / no change
     gProb = nv;
     gui("gprob", gProb); // GUI recomputes every bar (effective = own + offset)
     if (pushGrabbed && pushAfterGrab) pushAfterGrab.schedule(50); // re-base the pads (coalesced)
 }
+
+// Scene held: set the own probability of every note in row r. (A note entered later still
+// starts at 100: probability belongs to the note.)
+function setRowProb(r, nv) {
+    for (var st = 0; st < TOTAL_STEPS; st++) if (pattern[r][st] > 0) prob[r][st] = nv;
+    var t = r - noteBase;
+    if (t >= 0 && t < VIEW_TRACKS) {
+        for (var s = 0; s < VIEW_STEPS; s++) {
+            if (pattern[r][stepBase + s] > 0) {
+                gui("cprob", t, s, nv);
+                pushSetPad(t, s, pattern[r][stepBase + s]);
+            }
+        }
+    }
+    scheduleProbSnap();
+}
+// What the Prob encoder shows while a scene is held: the probability most of the row's notes
+// share (100 for an empty row).
+function rowProbDisplay(r) {
+    var count = {}, best = 100, bestN = 0;
+    for (var st = 0; st < TOTAL_STEPS; st++) {
+        if (pattern[r][st] <= 0) continue;
+        var p = prob[r][st];
+        count[p] = (count[p] || 0) + 1;
+        if (count[p] > bestN) { bestN = count[p]; best = p; }
+    }
+    return best;
+}
+// The Prob encoder's display when no pad is held: the held scene's row, else the global.
+function probDisplay() { return pushSceneSel >= 0 ? rowProbDisplay(pushSceneSel) : gProb; }
 
 // Length param (6th encoder), same pattern as pprob: held pad -> the note's length,
 // no pad -> the GLOBAL length offset (rides the live.* param, persisted by Live).
@@ -1362,10 +1424,19 @@ function makeSceneCb(si) {
         if (pushMuteHeld) { if (pressed) mutetrack(t); return; }
         if (pushSoloHeld) { if (pressed) solotrack(t); return; }
         // No modifier: HOLD a scene to point the loop Start/End encoders at THAT note
-        // (polyrhythm) AND the Lock encoders (7/8) at that row's OFFSET (shifts all its notes);
-        // RELEASE returns them to the global loop (all notes). Momentary.
-        if (pressed) { pushSceneSel = noteBase + t; selectLoopNote(noteBase + t); showLocks(noteBase + t, plockBase[noteBase + t]); }
-        else if (pushSceneSel >= 0) { pushSceneSel = -1; selectLoopNote(-1); }
+        // (polyrhythm), the Prob encoder at that row's notes, AND the Lock encoders (7/8) at
+        // that row's OFFSET (shifts all its notes); RELEASE returns them to the global loop /
+        // global probability. Momentary.
+        if (pressed) {
+            pushSceneSel = noteBase + t;
+            selectLoopNote(noteBase + t);
+            showLocks(noteBase + t, plockBase[noteBase + t]);
+            if (!probTarget) param("prob", probDisplay());
+        } else if (pushSceneSel >= 0) {
+            pushSceneSel = -1;
+            selectLoopNote(-1);
+            if (!probTarget) param("prob", gProb);
+        }
     };
 }
 // Mute / Solo buttons act as held modifiers. Track the hold and repaint the scene LEDs
@@ -1596,7 +1667,7 @@ function sendParams() {
     param("follow", followPlay ? 1 : 0);
     param("start", loopTargetS() + 1);
     param("end", loopTargetE());
-    if (!probTarget) { param("prob", gProb); param("length", gGate); param("vel", gVel); } // don't fight the held-pad display
+    if (!probTarget) { param("prob", probDisplay()); param("length", gGate); param("vel", gVel); } // don't fight the held-pad display
 }
 
 function extractId(res) {
@@ -1638,12 +1709,17 @@ function onSwingAmount(args) {
 }
 
 // Observer callback: fired when is_playing changes
+var restoreParamsTask = null;
 function onLiveChange(args) {
     if (args && args[0] === "is_playing" && Number(args[1]) === 0) {
         lastStep = -1;
         lastRawStep = -1;
         for (var r = 0; r < NUM_NOTES; r++) lastStepN[r] = -1; // re-trigger cleanly on restart
         clearPlayheads();
+        // Put locked pad params back to their own values. Deferred: Live refuses parameter
+        // changes made from inside a notification.
+        if (!restoreParamsTask) restoreParamsTask = new Task(restoreAllParams);
+        restoreParamsTask.schedule(10);
     }
 }
 
