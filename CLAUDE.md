@@ -317,8 +317,16 @@ Discovered/tested on the dev machine. Recipe for the arrows (also applies to the
   but for the whole row; a note entered later still starts at 100). The encoder shows
   `rowProbDisplay(r)` = the value most of the row's notes share (100 for an empty row);
   `probDisplay()` picks row vs global and is used by `makeSceneCb` (press/release),
-  `exitProbMode` and `sendParams`. Undo via `scheduleProbSnap`. Vel and Length stay
-  note/global only.
+  `exitProbMode` and `sendParams`. Undo via `scheduleProbSnap`. Length stays note/global only.
+- **ROW velocity — Vel encoder with a scene held (2026-09-26).** Same target priority in `pvel`
+  (pad → scene → global), but **relative**, like a fader on the row, so accents/ghost notes keep
+  their differences: on scene press `captureRowVel(r)` snapshots the row (`rowVelSnap`) and the
+  displayed reference (`rowVelRef` = `velDisplay()` = the row's loudest note, or `gVel` for an
+  empty row); each turn `shiftRowVel` sets every note to `clamp(snapshot + (value − ref), 1,
+  127)` — computed from the snapshot, so turning back restores exactly. The snapshot is re-taken
+  in `exitProbMode` (a pad edit during the hold may have changed the row) and dropped on scene
+  release. Undo via `scheduleVelSnap`. `velDisplay()` is used by `makeSceneCb`, `exitProbMode`
+  and `sendParams`.
 - **Per-step length/gate — pad hold + 6th encoder (`gate[r][s]`, 5..6400%, 2026-07-02).** A
   note holds `gate%` of a step's duration: **100 = one step** (default), **<100** = staccato,
   **>100 = tie/legato** that **spills over** into the following steps (and pages) — up to **6400%**
@@ -611,7 +619,8 @@ for the Push display; the engine converts them to a 0-based `[loopStart, loopEnd
 **Encoders (2026-07-03)**: Follow(1), Loop Start(2), Loop End(3), **Vel(4)**, Prob(5), Length(6),
 Lock1(7), Lock2(8). The **Block param was removed** (encoder 2 used to drive it; paging is done
 with the **< Page / Page >** buttons) → ⚠️ `stepBase` (shown block) **no longer persists** in the
-Set (returns to block 1 on reopen). **Vel** (`pvel`): pad held → the note's velocity; no pad →
+Set (returns to block 1 on reopen). **Vel** (`pvel`): pad held → the note's velocity; scene held →
+the whole row, relative (see ROW velocity above); nothing held →
 **global offset** `gVel` (`effVel = clamp(own + gVel − 100, 1, 127)`, neutral 100, rides the Vel
 param like `gProb`/`gGate`) applied **everywhere**: playback, pad brightness
 (`padLitColor`/`shimmerRoll` via `effVel`), the GUI (msg `gvel`) and the **exported clip**.

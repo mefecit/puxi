@@ -1275,8 +1275,9 @@ function enterProbMode(t, s) {
 }
 function exitProbMode() {
     probTarget = null;
-    param("vel", gVel);      // encoders fall back to the GLOBAL vel / prob / length display
-    param("prob", probDisplay()); // (or the held scene's row, for Prob)
+    if (pushSceneSel >= 0) captureRowVel(pushSceneSel); // a pad edit may have changed the row
+    param("vel", velDisplay());   // encoders fall back to the GLOBAL vel / prob / length display
+    param("prob", probDisplay()); // (or the held scene's row, for Vel and Prob)
     param("length", gGate);
 }
 // Prob param (5th encoder). A pad HELD -> edits that cell's own probability. A scene HELD ->
@@ -1424,18 +1425,20 @@ function makeSceneCb(si) {
         if (pushMuteHeld) { if (pressed) mutetrack(t); return; }
         if (pushSoloHeld) { if (pressed) solotrack(t); return; }
         // No modifier: HOLD a scene to point the loop Start/End encoders at THAT note
-        // (polyrhythm), the Prob encoder at that row's notes, AND the Lock encoders (7/8) at
-        // that row's OFFSET (shifts all its notes); RELEASE returns them to the global loop /
-        // global probability. Momentary.
+        // (polyrhythm), the Vel and Prob encoders at that row's notes, AND the Lock encoders
+        // (7/8) at that row's OFFSET (shifts all its notes); RELEASE returns them to the
+        // global loop / global velocity / global probability. Momentary.
         if (pressed) {
             pushSceneSel = noteBase + t;
             selectLoopNote(noteBase + t);
             showLocks(noteBase + t, plockBase[noteBase + t]);
-            if (!probTarget) param("prob", probDisplay());
+            captureRowVel(noteBase + t);
+            if (!probTarget) { param("prob", probDisplay()); param("vel", velDisplay()); }
         } else if (pushSceneSel >= 0) {
             pushSceneSel = -1;
+            rowVelSnap = null;
             selectLoopNote(-1);
-            if (!probTarget) param("prob", gProb);
+            if (!probTarget) { param("prob", gProb); param("vel", gVel); }
         }
     };
 }
@@ -1641,7 +1644,8 @@ function pend(v) {
 }
 
 // "Vel" param (Push encoder 4, just before Prob). A pad HELD -> edits that NOTE's velocity;
-// NO pad held -> the GLOBAL velocity offset gVel (an offset on every note, like gProb: effVel
+// a scene HELD -> moves every note of that row up or down together (shiftRowVel); NOTHING
+// held -> the GLOBAL velocity offset gVel (an offset on every note, like gProb: effVel
 // = clamp(own + gVel - 100, 1, 127)). The global rides the live.* param (persisted by Live).
 function pvel(v) {
     var nv = clamp(Math.round(Number(v)), 1, 127);
@@ -1655,6 +1659,7 @@ function pvel(v) {
         }
         return;
     }
+    if (pushSceneSel >= 0) { shiftRowVel(pushSceneSel, nv); return; } // held scene: the whole row
     if (nv === gVel) return; // echo / no change
     gVel = nv;
     gui("gvel", gVel); // GUI recomputes each cell's brightness (effective = own + gVel - 100)
@@ -1663,11 +1668,46 @@ function pvel(v) {
 var velSnapTask = null;
 function scheduleVelSnap() { if (!velSnapTask) velSnapTask = new Task(pushSnapshot); velSnapTask.schedule(250); }
 
+// Scene held: the Vel encoder works like a fader on the whole row. It shows the row's loudest
+// note, and turning it shifts every note of the row by the same amount, so their differences
+// (accents, ghost notes) are kept. The shift is computed from the velocities captured when the
+// scene was pressed, so turning back restores them exactly.
+var rowVelSnap = null;   // row velocities captured at scene press; null = no scene held
+var rowVelRef = 100;     // what the Vel encoder showed at that moment
+function captureRowVel(r) {
+    rowVelSnap = pattern[r].slice();
+    rowVelRef = velDisplay();
+}
+function shiftRowVel(r, nv) {
+    if (!rowVelSnap) return;
+    var d = nv - rowVelRef, changed = false;
+    for (var st = 0; st < TOTAL_STEPS; st++) {
+        if (rowVelSnap[st] > 0) { pattern[r][st] = clamp(rowVelSnap[st] + d, 1, 127); changed = true; }
+    }
+    if (!changed) return;
+    var t = r - noteBase;
+    if (t >= 0 && t < VIEW_TRACKS) {
+        for (var s = 0; s < VIEW_STEPS; s++) {
+            var sv = pattern[r][stepBase + s];
+            if (sv > 0) { gui("cell", t, s, sv); pushSetPad(t, s, sv); }
+        }
+    }
+    scheduleVelSnap();
+}
+// The Vel encoder's display when no pad is held: the held scene row's loudest note, else the
+// global offset (also the global when the held row is empty).
+function velDisplay() {
+    if (pushSceneSel < 0) return gVel;
+    var top = 0;
+    for (var st = 0; st < TOTAL_STEPS; st++) if (pattern[pushSceneSel][st] > top) top = pattern[pushSceneSel][st];
+    return top > 0 ? top : gVel;
+}
+
 function sendParams() {
     param("follow", followPlay ? 1 : 0);
     param("start", loopTargetS() + 1);
     param("end", loopTargetE());
-    if (!probTarget) { param("prob", probDisplay()); param("length", gGate); param("vel", gVel); } // don't fight the held-pad display
+    if (!probTarget) { param("prob", probDisplay()); param("length", gGate); param("vel", velDisplay()); } // don't fight the held-pad display
 }
 
 function extractId(res) {

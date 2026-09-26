@@ -52,6 +52,12 @@ Every step carries a velocity from 1 to 127. In Live, set it by dragging a cell
 vertically; the cell's brightness follows. On Push, either hit the pad harder or
 hold the pad and turn the **Vel** encoder.
 
+To make one sound louder or quieter as a whole, hold its row's **scene button** and turn
+the **Vel** encoder. It works like a fader on the row: the display shows the row's
+loudest note, and every note moves up or down by the same amount, so accents and ghost
+notes keep their differences. Turning back before you release the scene restores them
+exactly.
+
 The **Vel** encoder with no pad held sets a **global velocity offset** that raises
 or lowers all notes at once. The offset is non-destructive (neutral at the center position) and
 is reflected in the sound, in the pad and grid brightness, and in exported clips.
@@ -280,7 +286,8 @@ Order: **Follow · Loop Start · Loop End · Vel · Prob · Length · Lock 1 · 
   on for as long as you hold, then off on release. Handy for glancing at the
   playhead without changing your setting.
 - **Encoder 4 — Vel:** with a pad held, sets that note's velocity (the brightness
-  follows); with no pad held, sets the global velocity — an offset that raises or
+  follows); with a scene button held, moves all the notes of that row up or down together;
+  with nothing held, sets the global velocity — an offset that raises or
   lowers all notes (non-destructive, neutral at the center), reflected in the sound, the
   pad and grid brightness, and exported clips.
 - **Encoder 5 — Prob:** with a pad held, sets that note's probability; with a scene
@@ -407,6 +414,7 @@ encoders, display, and Accent all work without a computer.
 | Mute a track | click the **name** | hold **Mute** + scene button |
 | Solo a track (exclusive) | click the **"S"** | hold **Solo** + scene button |
 | Set velocity | drag ↑/↓ on the cell | pad hit strength, or hold pad + **Vel** encoder (4) |
+| Velocity of a whole row | — | hold **scene** + **Vel** encoder (4) |
 | Global velocity (all notes) | — | **Vel** encoder (4), no pad held |
 | Set probability | drag ←/→ (left part) | hold pad + **Prob** encoder (5) |
 | Probability of a whole row | — | hold **scene** + **Prob** encoder (5) |
