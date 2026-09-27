@@ -2,6 +2,8 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
+![Puxi running on a Push 3: the eight encoders on the display, the pattern on the pads](docs/images/puxi-push3.jpg)
+
 A free, open-source 8-track drum step sequencer for **Ableton Live 12** with deep
 **Push 3** integration. Inspired by the OXI One's multi-track view — all of your
 drum tracks on one grid at once. All the sequencing logic lives in
