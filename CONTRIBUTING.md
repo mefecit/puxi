@@ -14,8 +14,8 @@ The guiding decision: **a minimal Max patch + all the logic in JavaScript.**
 - `device/puxi-shell.maxpat` — the patch shell: clock (`metro 16n`), MIDI I/O,
   `live.thisdevice`, the exposed Live parameters, and a pattern-persistence
   sub-patcher. About 40 objects (37 at the top level + 4 in the sub-patcher); we
-  only add a Max object when JS genuinely can't do the
-  job (audio-rate timing, MIDI/CS I/O, native `live.*` UI).
+  only add a Max object when JS genuinely can't do the job (audio-rate timing,
+  MIDI/CS I/O, native `live.*` UI).
 - `device/puxi-engine.js` — the `v8` engine: pattern state, step logic, the Live
   API (`LiveAPI`), Push control-surface integration, persistence.
 - `device/puxi-gui.js` — the `v8ui` GUI: the 8×8 grid rendering and mouse

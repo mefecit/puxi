@@ -168,8 +168,8 @@ Discovered/tested on the dev machine. Recipe for the arrows (also applies to the
   `pushRenderGrid`, guarded by `pushGrabbed`): **Live does not repaint** these buttons in
   device view, so our LEDs hold (**verified on hardware, Live 12.4**) → we keep the Follow +
   block indicators **as before**, without stealing the click. The Follow **toggle** goes
-  through **encoder 1** (touch/turn) + the GUI; block **paging** through **encoder 2** + the
-  Page buttons. (If Live ever starts repainting them and overwriting our LEDs, remove these 2 calls.)
+  through **encoder 1** (touch/turn) + the GUI; block **paging** through the **< Page / Page >**
+  buttons + the GUI. (If Live ever starts repainting them and overwriting our LEDs, remove these 2 calls.)
 - **Block copy/paste (Duplicate + screen row, 2026-06-29).** `Duplicate_Button` grabbed on
   focus (modifier; suppresses the native "duplicate"). **Holding** it enters *dup mode*: we
   **momentarily grab** the 8 `Track_Select_Button0..7` (block i), 1st tap = **copy** that
@@ -241,8 +241,9 @@ Discovered/tested on the dev machine. Recipe for the arrows (also applies to the
   (dedicated buttons) **held** = modifiers, plus the 8 `Scene_Launch_Button0..7` (to the right
   of the pads). All **grabbed on focus** (helper `acquireGrab`: grab + observe `value` +
   returns a LiveAPI handle for the LED). Gesture: **hold Mute** (or Solo) **+ tap a scene** →
-  `mutetrack` (or exclusive `solotrack`) on the aligned row; a tap without a modifier =
-  ignored (we own the button, no native scene launch while focused). ⚠️ **Inverted scene
+  `mutetrack` (or exclusive `solotrack`) on the aligned row; with no modifier, **holding** a
+  scene targets its row for the loop/Vel/Prob/Lock encoders (we own the button, no native
+  scene launch while focused). ⚠️ **Inverted scene
   orientation**: the `Scene_Launch_Button`s are numbered **bottom(0)→top(7)** — the **opposite**
   of the `Button_Matrix` rows — so the view row is the index directly (`sceneRow(si)=si`, a
   one-line flip, like `pushRow`). Scene LEDs (`updateSceneLeds`): **lit = the row plays**
@@ -270,12 +271,12 @@ Discovered/tested on the dev machine. Recipe for the arrows (also applies to the
 - **Momentary follow**: observe encoder 1's touch → a hold (debounce ~60 ms, no rotation)
   forces follow on, release = off; any rotation cancels the momentary hold and sets follow by its
   direction.
-- **Polyrhythm — per-note loop lengths (encoders 3/4 + scene buttons).** Each note has an
+- **Polyrhythm — per-note loop lengths (encoders 2/3 + scene buttons).** Each note has an
   **effective** loop `[start, end)`: either the **global loop** `gLoopS/gLoopE` it **follows**,
   or its own **custom** loop (frozen) if `loopCustom[r]`. `tick` advances each note within ITS
   loop, **phase-locked at start** (`S = round(beats*4)`, `step = eLoopS(r) + (S mod
   (eLoopE−eLoopS))`) → each note at a different step. **Encoder target** (`loopSelN`): **−1 =
-  global** by default; **holding a scene button** (without Mute/Solo) sets it to **that note**
+  global** by default; **holding a scene button** (with no Mute/Solo/Repeat/Delete modifier) sets it to **that note**
   (momentary), **release = back to global** (`makeSceneCb`: press→`selectLoopNote(note)`,
   release→`selectLoopNote(-1)` guarded by `pushSceneSel`). `setloop`: global target → moves
   `gLoop` (followers follow, custom ones **frozen**); note target → makes it **custom**;
@@ -289,7 +290,7 @@ Discovered/tested on the dev machine. Recipe for the arrows (also applies to the
   release** (`padPress` + `padHoldTask` ~250 ms). Tap = toggle; **hold** → `enterProbMode(t,s)`
   (no toggle) → `probTarget = {r,step}` + `param("prob", …)` shows the cell's probability on
   **encoder 5** (Live param `Prob`, `parameter_mapping_index 5`). Turning the encoder →
-  `pprob(v)` edits `probTarget` (ignored if no pad held; **no resync** → no storm like the loop
+  `pprob(v)` edits `probTarget` (no pad held → the held scene's row, else the global offset; **no resync** → no storm like the loop
   detents). Release → `exitProbMode`. ⚠️ **The "Prob" label is always displayed** (a
   deliberate choice, 2026-07-02): a mapped param always shows (the screen isn't drawable) — it's
   impossible to hide it when idle without losing the label (the alternative = grabbing the encoder
@@ -599,7 +600,7 @@ after many tries):
   PuxiState) and the detents can re-absorb the param's undo (Live's restore order not guaranteed).
   Mitigated by a **detent resync in `applyRestore`** (`magStart/magEnd.last`), but not 100%. The
   GUI ruler doesn't go through the native param → **a single, clean step**. Plan B if needed: grab
-  encoders 3/4 (relative rotation) to remove the undoable native param. **Guarded by
+  encoders 2/3 (relative rotation) to remove the undoable native param. **Guarded by
   `restoreSettled`** so it never overwrites the saved value before it has been restored. `pstate`
   deserializes it (apply-once via `pendingRestore`) **without touching LiveAPI** (it can arrive
   before `live.thisdevice`) → `init`/`selfInit` repaints afterward.

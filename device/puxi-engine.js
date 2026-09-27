@@ -13,12 +13,13 @@
 //   - Follow playhead: when enabled, the step view snaps to the playing block
 //   - Talk to the GUI (v8ui): cell/playhead/label/view, receive nav/follow/toggle
 //
-// Outlets:
-//   0 -> [makenote]: list (pitch, velocity, duration_ms)
-//   1 -> [v8ui]:      "cell t s v", "cprob t s p", "clen t s g", "cratchet t s r", "playheads s0..s7",
-//                     "label t name", "loop t ls le", "loopsel selT ls le", "view … follow",
-//                     "gprob v", "glen v", "gvel v", "clear"
-//   2 -> Live params: "follow"/"start"/"end"/"vel"/"prob"/"length"/"plock1"/"plock2" v (-> route -> set; no echo)
+// Output: a SINGLE outlet carrying tagged messages (see emit() below):
+//   "note pitch vel dur" -> [makenote]
+//   "gui …"   -> [v8ui]: "cell t s v", "cprob t s p", "clen t s g", "cratchet t s r", "playheads s0..s7",
+//                "label t name", "color t r g b", "loop t ls le", "loopsel selT ls le", "view … follow",
+//                "musolo t m s sa", "dbl 0|1", "tailin t extent", "gprob v", "glen v", "gvel v", "clear"
+//   "param …" -> Live params "follow"/"start"/"end"/"vel"/"prob"/"length"/"plock1"/"plock2" v
+//                (-> route -> set; no echo), plus "state <ints…>" -> the PuxiState pattr
 // Inlet:
 //   0 <- "init"/"tick" (patch), "toggle t s" / "setvel t s v" / "setprob t s p" / "setgate t s g" /
 //        "setratchet t s r" / "nav axis delta" / "follow [0|1]" / "setloop start end" / "refresh" /
@@ -32,7 +33,8 @@
 autowatch = 0; // OFF: autowatch reloads the script when a Set reopens, which briefly
                // drops the v8 outlets -> Max deletes the patch cords (v8->GUI/params)
                // -> blank GUI + dead params until re-add. Reload the device manually
-               // after editing this .js (re-add it, or toggle the device off/on).
+               // after editing this .js: delete it from the track and drag it in again
+               // (switching it off and on does not reload the script).
 inlets = 1;
 outlets = 1; // SINGLE outlet on purpose. A v8's outlet count is set by the script,
              // but on Set reopen Max restores the patch cords BEFORE the script runs,
@@ -41,8 +43,9 @@ outlets = 1; // SINGLE outlet on purpose. A v8's outlet count is set by the scri
              // always survives; a [route note gui param] in the patch fans it back out.
 // Outlet 0 carries tagged messages, split downstream by [route note gui param]:
 //   "note <pitch> <vel> <dur>"  -> [makenote]      (MIDI)
-//   "gui <...>"                 -> [v8ui]           (cell/playhead/label/color/view/clear)
-//   "param <...>"              -> Live params       (follow/start/end/vel/prob/length/plock1/plock2)
+//   "gui <...>"                 -> [v8ui]           (the GUI messages listed in the header)
+//   "param <...>"               -> Live params      (follow/start/end/vel/prob/length/plock1/plock2
+//                                                    + state -> the PuxiState pattr)
 function emit(tag, a) { var m = [0, tag]; for (var i = 0; i < a.length; i++) m.push(a[i]); outlet.apply(null, m); }
 function note()  { emit("note",  arguments); }
 function gui()   { emit("gui",   arguments); }
@@ -457,8 +460,8 @@ var deleteGrabTask = null;  // defer the block-LED repaint after grabbing the bu
 // (or exclusively solo) the row aligned with it. The 8 scene buttons are grabbed so
 // we own the press; their LEDs mirror audibility — on = the row will play, off = muted
 // or silenced by a solo elsewhere — and turn fully on while Mute/Solo is held (a
-// "pick a row" hint). Scene button si (physical, 0 = top) maps to view row pushRow(si),
-// same piano-roll flip as the pads.
+// "pick a row" hint). Scene button si (physical, 0 = bottom) maps to view row sceneRow(si)
+// (no pushRow flip: the scenes already run bottom-up, like the piano-roll pads).
 var PUSH_SCENE_LED_ON = 126;  // scene button LED: row audible / hint while held (RGB index, calibrate)
 var PUSH_SCENE_LED_OFF = 0;   // scene button LED: row muted or solo-silenced
 var PUSH_MS_LED_ON = 127;     // Mute/Solo button LED: held (full)
@@ -468,7 +471,7 @@ var pushMuteBtn = null;       // Mute button control (LED)
 var pushSoloBtn = null;       // Solo button control (LED)
 var pushMuteHeld = false;     // Mute button physically held
 var pushSoloHeld = false;     // Solo button physically held
-var pushSceneSel = -1;        // note row held via a plain scene (loop-select); -1 = none
+var pushSceneSel = -1;        // note row held via a plain scene (loop/Vel/Prob/Lock target); -1 = none
 var thisDeviceId = 0;
 
 function pushInit() {
@@ -582,8 +585,9 @@ function pushInit() {
     // Delete button = held modifier for clearing a note row (scene) / a block (screen row).
     pushDeleteBtn = acquireGrab(["Delete_Button", "Delete"], onDeleteBtn);
 
-    // Mute/solo: grab the 8 scene-launch buttons (mute/solo a row) + the Mute & Solo
-    // buttons (held = modifier). All grabbed while focused; their LEDs are ours.
+    // Scenes: grab the 8 scene-launch buttons (mute/solo a row, row target for the encoders,
+    // Repeat/Delete combos) + the Mute & Solo buttons (held = modifier). All grabbed while
+    // focused; their LEDs are ours.
     pushSceneBtns = [];
     for (var si = 0; si < 8; si++)
         pushSceneBtns[si] = acquireGrab(["Scene_Launch_Button" + si], makeSceneCb(si));
@@ -635,9 +639,9 @@ function makeArrowCb(axis, delta) {
     };
 }
 
-// Push pad palette anchors we can TRUST (index -> [r,g,b]): the documented exact
+// Push pad palette anchors we can TRUST (index -> hue in degrees): the documented exact
 // values (red/green/blue/white) + named entries from the community pad-palette dump
-// (orange/yellow/turquoise/purple/pink). The full 128-color palette is only readable
+// (orange/yellow/purple/pink). The full 128-color palette is only readable
 // by sysex from the device (impossible from an M4L device + phone photos are too
 // imprecise), so we quantize each chain color to the NEAREST of these known-correct
 // indices. Trade-off: a small set of correct hues (very close shades may collapse).
@@ -914,7 +918,8 @@ function updateDoubleLed() {
     }
 }
 
-// Scene-button LEDs mirror mute/solo: on = the aligned row will play (audible), off =
+// Scene-button LEDs. Repeat held: the ratchet-division bar. Delete held: the rows that have
+// notes. Otherwise they mirror mute/solo: on = the aligned row will play (audible), off =
 // muted or silenced by a solo elsewhere. While Mute/Solo is held, all turn fully on (a
 // "pick a row" hint). Scene si (physical, 0 = bottom) -> view row sceneRow(si). Refreshed
 // from sendMuteSolo (state change) and pushRenderGrid (grab / view change).
@@ -1261,7 +1266,7 @@ function onPadMatrix(args) {
 function padHoldFired() {
     if (padPress) enterProbMode(padPress.t, padPress.s);
 }
-// Point the Prob AND Length encoders at a held cell: show its prob + length on the screen.
+// Point the Vel, Prob AND Length encoders at a held cell: show its velocity, prob and length.
 // Also show this step's parameter LOCKS on the Lock encoders (7/8).
 function enterProbMode(t, s) {
     var r = noteBase + t, step = stepBase + s;
@@ -1333,7 +1338,7 @@ function rowProbDisplay(r) {
 // The Prob encoder's display when no pad is held: the held scene's row, else the global.
 function probDisplay() { return pushSceneSel >= 0 ? rowProbDisplay(pushSceneSel) : gProb; }
 
-// Length param (6th encoder), same pattern as pprob: held pad -> the note's length,
+// Length param (6th encoder), like pprob but with no row (scene) target: held pad -> the note's length,
 // no pad -> the GLOBAL length offset (rides the live.* param, persisted by Live).
 function plength(v) {
     var nv = clamp(Math.round(Number(v)), MIN_GATE, MAX_GATE);
@@ -1409,7 +1414,7 @@ function ratchethit(t, s, vel) {
 
 // Scene-launch button press. With a modifier held: Repeat -> pick the ratchet division;
 // Delete -> clear the aligned row; Mute -> toggle mute; Solo -> exclusive solo. With no
-// modifier, a HOLD targets the row for the loop/Lock encoders (below). We own the button,
+// modifier, a HOLD targets the row for the loop, Vel, Prob and Lock encoders (below). We own the button,
 // so there's no native scene launch while focused. si = physical scene (0 = bottom) ->
 // view row sceneRow(si); the scenes run opposite to the pad rows, so no pushRow flip.
 function makeSceneCb(si) {
@@ -1522,7 +1527,8 @@ function pushControlAny(names, cb) {
 
 // Acquire a button by trying candidate names: mark it for grabbing while focused,
 // observe its value with cb (press/release), and return a LiveAPI handle for its LED
-// (or null if no name resolved). Used for the scene-launch + Mute/Solo buttons.
+// (or null if no name resolved). Used for the grabbed buttons: scenes, Mute/Solo, Double,
+// Repeat, Duplicate and Delete.
 function acquireGrab(names, cb) {
     for (var i = 0; i < names.length; i++) {
         var id = extractId(pushCS.call("get_control", names[i]));
