@@ -142,7 +142,17 @@ Discovered/tested on the dev machine. Recipe for the arrows (also applies to the
 - **Rebuilt surfaces / reconnect (`pushWatch`, branch `push2-test`).** ⚠️ Live **rebuilds** a
   control surface mid-session (seen on hardware when the Push 3 was turned on: every held control
   id became foreign to the surface → `Invalid arguments: 'release_control <ButtonElement …>'`, and
-  Puxi stayed dead until reloaded; a Push power-cycle or sleep/wake can do the same). While bound,
+  Puxi stayed dead until reloaded; a Push power-cycle or sleep/wake can do the same). Why (Live's
+  Max bridge, decompiled `_MxDCore/MxDCore.py` `prepare_control_surface_update`): when control
+  surfaces change, every Max device whose LiveAPI paths touched `control_surfaces` gets its whole
+  device context **released** (observers uninstalled, grabs/MIDI released) and the device
+  refreshed; the negative-id table is reset to `{0: None}` (ids handed out again from −1) and
+  the surface wrappers are rebuilt. Symptom on hardware right after a power-on rebind: `call
+  grab_control <ControlProxy …>: no valid object set` (our surface handle had id 0) and native
+  pads. `pushStaleReason()` checks three signals: our surface handle's id is 0, a fresh lookup of
+  the index gives another surface id, or other matrix/Accent ids. `onFocusChange` runs the same
+  check before grabbing or releasing (selecting Puxi again then always recovers: a dead binding
+  schedules `pushWatch` at once instead of touching dead controls). While bound,
   `pushWatch` (every 2.5 s) re-asks the bound index for the `Button_Matrix` **and** `Accent_Button`
   ids (`holdsBoundControls`; two ids because a control-surface update makes Live hand ids out again
   from −1 in request order, so one id alone can match by chance): same ids = fine; the ids on

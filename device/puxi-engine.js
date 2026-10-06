@@ -624,31 +624,28 @@ function pushInit() {
     pushObs.push(focusObs);
 }
 
-// While bound, every PUSH_PROBE_MS. Live rebuilds a control surface when its hardware is
-// turned off and on, wakes from sleep, or the surface list changes; the controls Puxi holds
-// then belong to nothing and every grab fails (seen on hardware: "Invalid arguments:
-// release_control <ButtonElement …>"). Spot it by asking the surface for its pad matrix
-// and Accent ids again (two ids: after a control-surface update Live hands ids out again
-// from -1 in request order, so one id could match by chance; the matrix and Accent ids
-// asked here 2nd and 3rd practically can't both match what pushInit got).
-// Same ids elsewhere = the same Push at a new index (another surface came or went):
-// just follow it. Nowhere = rebuilt or turned off: bind again from scratch (pushInit then
-// polls until a Push is back). On a Push 2, also switch to a Push 3 as soon as one shows
-// up (preferred).
+// While bound, every PUSH_PROBE_MS (and right away when a focus change finds the binding
+// dead, see onFocusChange). When its control surfaces change (a Push turned on or off, sleep/
+// wake, settings), Live's Max bridge (_MxDCore prepare_control_surface_update) releases every
+// surface/control object a device holds, clears its observers and grabs, rebuilds the surface
+// wrappers and hands negative ids out again from -1. Seen on hardware: "call grab_control …:
+// no valid object set" and "Invalid arguments: release_control <ButtonElement …>", with the
+// pads back to native. pushStaleReason() spots it; then the same controls at another index =
+// the same Push moved (follow it), otherwise bind again from scratch (pushInit polls until a
+// Push is back). On a Push 2, also switch to a Push 3 as soon as one shows up (preferred).
 function pushWatch() {
     if (!pushCS) return;
-    if (pushIdsStable) {
-        if (!holdsBoundControls(surfaceAt(pushIndex))) {
-            var moved = surfaceOwning();
-            if (moved < 0) {
-                post("Puxi: Push disconnected or rebuilt, reconnecting\n");
-                pushTeardown(true);
-                pushInit();
-                return;
-            }
-            pushIndex = moved;
-            pushCS = new LiveAPI("control_surfaces " + moved);
+    var why = pushIdsStable ? pushStaleReason() : "";
+    if (why) {
+        var moved = surfaceOwning();
+        if (moved < 0 || moved === pushIndex) {
+            post("Puxi: Push disconnected or rebuilt (" + why + "), reconnecting\n"); // TEST BUILD: (why)
+            pushTeardown(true);
+            pushInit();
+            return;
         }
+        pushIndex = moved;
+        pushCS = new LiveAPI("control_surfaces " + moved);
     }
     if (pushModel === 2 && findPushSurface(true).model === 3) {
         post("Puxi: Push 3 connected, switching to it\n");
@@ -690,7 +687,16 @@ function pushTeardown(gone) {
 function onFocusChange(args) {
     if (!args || args[0] !== "appointed_device") return;
     var appId = Number(args[args.length - 1]);
-    setGrabbed(appId === thisDeviceId && thisDeviceId !== 0);
+    var focused = appId === thisDeviceId && thisDeviceId !== 0;
+    // Grabs and releases happen here, so first make sure the binding is still alive: a
+    // control-surface update may have killed it since the last pushWatch tick. If so, don't
+    // touch dead controls: let pushWatch rebind now (a Task, not from inside this
+    // notification); the new binding's focus observer then grabs or not.
+    if (pushCS && pushIdsStable && pushStaleReason()) {
+        if (pushWatchTask) pushWatchTask.schedule(0);
+        return;
+    }
+    setGrabbed(focused);
 }
 
 function setGrabbed(on) {
@@ -1845,6 +1851,21 @@ function controlId(cs, name) {
 }
 
 function hasControl(cs, name) { return controlId(cs, name) !== 0; }
+
+// "" while the binding is alive, else what changed. Three signals: our own surface handle
+// went dead (id 0), a fresh lookup of that index gives another surface object, or that
+// surface hands out other matrix/Accent ids (two ids: recycled ids could match one by chance).
+function pushStaleReason() {
+    var mine = parseInt(pushCS.id, 10);
+    if (!mine) return "surface handle dead";
+    var cs = surfaceAt(pushIndex);
+    if (!cs) return "no surface at " + pushIndex;
+    if (parseInt(cs.id, 10) !== mine) return "surface id " + mine + " -> " + cs.id;
+    if (!holdsBoundControls(cs))
+        return "control ids " + pushMatrixId + "/" + pushAccentId + " -> " +
+               controlId(cs, "Button_Matrix") + "/" + controlId(cs, "Accent_Button");
+    return "";
+}
 
 // Does this surface still hand out the matrix and Accent ids Puxi bound to?
 function holdsBoundControls(cs) {
