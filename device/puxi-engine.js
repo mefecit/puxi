@@ -628,16 +628,18 @@ function pushInit() {
 // turned off and on, wakes from sleep, or the surface list changes; the controls Puxi holds
 // then belong to nothing and every grab fails (seen on hardware: "Invalid arguments:
 // release_control <ButtonElement …>"). Spot it by asking the surface for its pad matrix
-// again. Same id elsewhere = the same Push at a new index (another surface came or went):
+// and Accent ids again (two ids: after a control-surface update Live hands ids out again
+// from -1 in request order, so one id could match by chance; the matrix and Accent ids
+// asked here 2nd and 3rd practically can't both match what pushInit got).
+// Same ids elsewhere = the same Push at a new index (another surface came or went):
 // just follow it. Nowhere = rebuilt or turned off: bind again from scratch (pushInit then
 // polls until a Push is back). On a Push 2, also switch to a Push 3 as soon as one shows
 // up (preferred).
 function pushWatch() {
     if (!pushCS) return;
     if (pushIdsStable) {
-        var cs = surfaceAt(pushIndex);
-        if ((cs ? controlId(cs, "Button_Matrix") : 0) !== pushMatrixId) {
-            var moved = surfaceOwning("Button_Matrix", pushMatrixId);
+        if (!holdsBoundControls(surfaceAt(pushIndex))) {
+            var moved = surfaceOwning();
             if (moved < 0) {
                 post("Puxi: Push disconnected or rebuilt, reconnecting\n");
                 pushTeardown(true);
@@ -1046,12 +1048,16 @@ function updateMuteSoloLeds() {
 // Follow state on Track_State_Button0, the shown 8-step block (green) on the
 // Track_Select_Button0..7 row. Painted only while Puxi is focused.
 function updateFollowLed() {
+    if (pushModel === 2) return; // Push 2's script repaints this row (device list): leave it native
     if (pushGrabbed && pushFollowBtn) {
         pushFollowBtn.call("send_value", followPlay ? PUSH_FOLLOW_ON_COLOR : PUSH_FOLLOW_OFF_COLOR);
     }
 }
 function updateBlockLeds() {
     if (!pushGrabbed || !pushBlockBtns) return;
+    // Push 2's script repaints this row (its track list) in device mode, so the block
+    // indicator would go stale: paint it only while Duplicate/Delete hold the row grabbed.
+    if (pushModel === 2 && !pushDupHeld && !pushDeleteHeld) return;
     if (pushDeleteHeld) { // delete hint: light the blocks that hold something to clear
         for (var d = 0; d < pushBlockBtns.length; d++)
             if (pushBlockBtns[d]) pushBlockBtns[d].call("send_value", blockHasNotes(d) ? PUSH_BLOCK_LED : 0);
@@ -1807,7 +1813,8 @@ function extractId(res) {
 
 // Find the Push control surface by index (its index can change between Live sessions).
 // Returns {index, model}: model 3 = Push 3, 2 = Push 2, index -1 = none (onlyPush3: skip Push 2).
-// A Push 3 is preferred: it's the only surface with a Jogwheel. Push 2 has no jog wheel
+// A Push 3 is preferred: a Jogwheel plus the core Push controls (the original Arturia
+// KeyLab Essential script names an encoder "Jogwheel" too). Push 2 has no jog wheel
 // but names every control Puxi drives the same way (both scripts build on Ableton's
 // shared Push code). Push 1 shares most names too, but has no Convert or Page buttons
 // (In/Out instead) and a different color palette, so it is NOT taken for a Push 2 (the dev
@@ -1820,7 +1827,7 @@ function findPushSurface(onlyPush3) {
     for (var i = 0; i < 16; i++) {
         var cs = surfaceAt(i);
         if (!cs) continue;
-        if (hasControl(cs, "Jogwheel")) return { index: i, model: 3 };
+        if (isPush3(cs)) return { index: i, model: 3 };
         if (!onlyPush3 && push2 < 0 && isPush2(cs)) push2 = i;
     }
     return { index: push2, model: push2 < 0 ? 0 : 2 };
@@ -1839,13 +1846,22 @@ function controlId(cs, name) {
 
 function hasControl(cs, name) { return controlId(cs, name) !== 0; }
 
-// Index of the surface whose control `name` has this id, -1 if none does any more.
-function surfaceOwning(name, id) {
-    for (var i = 0; i < 16; i++) {
-        var cs = surfaceAt(i);
-        if (cs && controlId(cs, name) === id) return i;
-    }
+// Does this surface still hand out the matrix and Accent ids Puxi bound to?
+function holdsBoundControls(cs) {
+    return !!cs && controlId(cs, "Button_Matrix") === pushMatrixId &&
+           controlId(cs, "Accent_Button") === pushAccentId;
+}
+
+// Index of the surface that still holds Puxi's bound controls, -1 if none does any more.
+function surfaceOwning() {
+    for (var i = 0; i < 16; i++)
+        if (holdsBoundControls(surfaceAt(i))) return i;
     return -1;
+}
+
+function isPush3(cs) {
+    return hasControl(cs, "Button_Matrix") && hasControl(cs, "Scene_Launch_Button0") &&
+           hasControl(cs, "Track_State_Button0") && hasControl(cs, "Jogwheel");
 }
 
 function isPush2(cs) {

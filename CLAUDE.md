@@ -128,18 +128,24 @@ Discovered/tested on the dev machine. Recipe for the arrows (also applies to the
   `Page_Left/Right_Button`, `Convert`, … — checked against the decompiled Live 12 scripts), and its
   pad palette uses the same scheme (`Push2/colors.py`: 122 white, 124 dark gray, 125 blue, 126
   green, 127 red, shades of base color c at `(c−1)·2 + 64 + 1|2` — which is where the `VEL_LADDER`
-  values sit). So `findPushSurface()` now returns `{index, model}`: a Jogwheel surface = Push 3
-  (preferred); otherwise a surface with all of `PUSH2_CONTROLS` = Push 2. That list includes
+  values sit). So `findPushSurface()` now returns `{index, model}`: a surface with a Jogwheel **and** the core
+  Push controls = Push 3 (preferred; `isPush3` — the original Arturia KeyLab Essential script
+  names an encoder `Jogwheel` too); otherwise a surface with all of `PUSH2_CONTROLS` = Push 2. That list includes
   `Convert` + `Page_Left/Right_Button` on purpose: the dev machine's ghost at index 0 turned out to
   be a **Push 1** script surface (its report: `Display_Line_0..3`, `In_Button`/`Out_Button`, touch
   strip, no Convert/Page; present in some states with the Push 3 off, absent in others) and a
   looser check bound to it. Push 1 = a different fixed palette + no Convert → not supported (would
-  need its own color table, checked on hardware).
+  need its own color table, checked on hardware). **Push 2 screen rows stay native**: its script
+  repaints both rows in device mode (TrackList on `Track_Select_Button*`, DeviceNavigation on
+  `Track_State_Button*`), so the Follow and block indicators would go stale → `updateFollowLed` is
+  skipped and `updateBlockLeds` paints only while Duplicate/Delete hold the row grabbed.
 - **Rebuilt surfaces / reconnect (`pushWatch`, branch `push2-test`).** ⚠️ Live **rebuilds** a
   control surface mid-session (seen on hardware when the Push 3 was turned on: every held control
   id became foreign to the surface → `Invalid arguments: 'release_control <ButtonElement …>'`, and
   Puxi stayed dead until reloaded; a Push power-cycle or sleep/wake can do the same). While bound,
-  `pushWatch` (every 2.5 s) re-asks the bound index for `Button_Matrix`: same id = fine; the id on
+  `pushWatch` (every 2.5 s) re-asks the bound index for the `Button_Matrix` **and** `Accent_Button`
+  ids (`holdsBoundControls`; two ids because a control-surface update makes Live hand ids out again
+  from −1 in request order, so one id alone can match by chance): same ids = fine; the ids on
   another index = the same Push moved (follow it: new `pushIndex`/`pushCS`); nowhere = rebuilt or
   off → `pushTeardown(true)` (drops the handles **without** release calls, which a rebuilt surface
   rejects) + `pushInit()` (polls until a Push is back). On a Push 2 it also switches to a Push 3 when
