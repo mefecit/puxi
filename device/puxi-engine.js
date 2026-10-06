@@ -481,9 +481,11 @@ var thisDeviceId = 0;
 function pushInit() {
     if (pushCS) return; // already initialized
     var found = findPushSurface();
-    if (!surfaceReportDone) { // TEST BUILD
-        surfaceReportDone = true;
-        try { reportSurfaces(); } catch (e) { post("Puxi report failed: " + e + "\n"); }
+    // TEST BUILD: report at the first probe, and again when a Push shows up after a report
+    // that saw no surface at all (the Push was turned on after Puxi loaded).
+    if (surfaceReportN < 0 || (surfaceReportN === 0 && found.index >= 0)) {
+        try { surfaceReportN = reportSurfaces(); }
+        catch (e) { surfaceReportN = 0; post("Puxi report failed: " + e + "\n"); }
     }
     if (found.index < 0) {
         // The Push may be off / not yet connected. Keep polling so turning it ON after
@@ -1813,7 +1815,7 @@ var PUXI_CONTROLS = [["Button_Matrix"], ["Accent_Button"], ["Convert", "Convert_
     ["Page_Right", "Page_Right_Button"], ["Track_Control_0"], ["Track_Control_Touch_0"],
     ["Track_Control_7"], ["Track_State_Button0"], ["Track_Select_Button0"], ["Track_Select_Button7"],
     ["Scene_Launch_Button0"], ["Scene_Launch_Button7"], ["Jogwheel"]];
-var surfaceReportDone = false;
+var surfaceReportN = -1; // surfaces seen by the last report (-1 = no report yet)
 
 function reportSurfaces() {
     var app = new LiveAPI("live_app");
@@ -1838,6 +1840,7 @@ function reportSurfaces() {
             post("Puxi report:   " + names.slice(n, n + 10).join(" ") + "\n");
     }
     if (!count) post("Puxi report: no control surfaces\n");
+    return count;
 }
 
 // get_control_names answers "control_names N control <name> control <name> … done".
