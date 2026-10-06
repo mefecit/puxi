@@ -119,7 +119,7 @@ Discovered/tested on the dev machine. Recipe for the arrows (also applies to the
 
 - Push 3 is a **control surface**: `new LiveAPI("control_surfaces N")`. On the dev machine, **N = 1**
   (the real Push = `RemoteControlSurfaceWrapper`; index 0 is a ghost
-  `LocalControlSurfaceWrapper` profile). `findPushSurface()` finds it by the presence
+  `LocalControlSurfaceWrapper` profile — a Push 1 script surface, see the Push 2 bullet). `findPushSurface()` finds it by the presence
   of a **Jogwheel** (the index can change; the ghost has no Jogwheel).
 - **Push 2 (experimental, branch `push2-test`, 2026-10-06).** A Push 2 user reported "Push not
   found": Push 2 has no Jogwheel. Its script names every control Puxi drives exactly like Push 3
@@ -129,12 +129,25 @@ Discovered/tested on the dev machine. Recipe for the arrows (also applies to the
   pad palette uses the same scheme (`Push2/colors.py`: 122 white, 124 dark gray, 125 blue, 126
   green, 127 red, shades of base color c at `(c−1)·2 + 64 + 1|2` — which is where the `VEL_LADDER`
   values sit). So `findPushSurface()` now returns `{index, model}`: a Jogwheel surface = Push 3
-  (preferred); otherwise a surface with all of `PUSH_CORE_CONTROLS` = Push 2. ⚠️ The dev machine's
-  ghost at index 0 **is** such a Push 2 surface with no hardware behind it, so with the Push 3 off
-  at load Puxi binds to the ghost; `pushUpgradeProbe` keeps polling for a Jogwheel surface and
-  switches (`pushTeardown` + `pushInit`) when the Push 3 turns on. The test build also prints a
-  one-time `Puxi report:` of every surface (type, Puxi controls missing, all control names) and a
-  "TEST BUILD" banner — strip both (`// TEST BUILD` markers) before merging to main.
+  (preferred); otherwise a surface with all of `PUSH2_CONTROLS` = Push 2. That list includes
+  `Convert` + `Page_Left/Right_Button` on purpose: the dev machine's ghost at index 0 turned out to
+  be a **Push 1** script surface (its report: `Display_Line_0..3`, `In_Button`/`Out_Button`, touch
+  strip, no Convert/Page; present in some states with the Push 3 off, absent in others) and a
+  looser check bound to it. Push 1 = a different fixed palette + no Convert → not supported (would
+  need its own color table, checked on hardware).
+- **Rebuilt surfaces / reconnect (`pushWatch`, branch `push2-test`).** ⚠️ Live **rebuilds** a
+  control surface mid-session (seen on hardware when the Push 3 was turned on: every held control
+  id became foreign to the surface → `Invalid arguments: 'release_control <ButtonElement …>'`, and
+  Puxi stayed dead until reloaded; a Push power-cycle or sleep/wake can do the same). While bound,
+  `pushWatch` (every 2.5 s) re-asks the bound index for `Button_Matrix`: same id = fine; the id on
+  another index = the same Push moved (follow it: new `pushIndex`/`pushCS`); nowhere = rebuilt or
+  off → `pushTeardown(true)` (drops the handles **without** release calls, which a rebuilt surface
+  rejects) + `pushInit()` (polls until a Push is back). On a Push 2 it also switches to a Push 3 when
+  one appears (`pushTeardown(false)` releases normally). Guarded by `pushIdsStable` (asking twice for
+  `Button_Matrix` must give the same id, otherwise the check is skipped instead of reconnecting every
+  tick). The test build also prints a `Puxi report:` of every surface (type, missing Puxi controls,
+  all control names) at the first probe and again when a Push appears after a report that saw no
+  surface, plus a "TEST BUILD" banner — strip both (`// TEST BUILD` markers) before merging to main.
 - **Deferred connection (Push turned on afterward)**: if `findPushSurface()` finds
   nothing at init (Push off/not connected), `pushInit` **does not give up** — it
   **re-probes every 2.5 s** (`pushRetryTask`) until Push connects, then initializes

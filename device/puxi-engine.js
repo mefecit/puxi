@@ -418,7 +418,9 @@ var pushPlayColN = [-1, -1, -1, -1, -1, -1, -1, -1]; // per visible row: pad col
 var pushAfterGrab = null;   // deferred LED draw (grab must settle before send_value)
 var pushRetryTask = null;   // poll for the Push until it connects (turned on after load)
 var pushModel = 0;          // 3 = Push 3, 2 = Push 2 (experimental), 0 = none yet
-var pushUpgradeTask = null; // bound to a Push 2: keep polling for a Push 3 (preferred)
+var pushIndex = -1;         // control_surfaces index of the bound Push
+var pushIdsStable = false;  // get_control hands back the same id for the same control (see pushWatch)
+var pushWatchTask = null;   // while bound: still the same surface? (and on a Push 2: a Push 3 now?)
 var PUSH_PROBE_MS = 2500;   // polling period of both probes
 var PUSH_ACCENT_LED = 127;  // Accent button LED value when active (full)
 var PUSH_ACCENT_LED_DIM = 5; // Accent button LED when inactive: dim, not off
@@ -500,13 +502,10 @@ function pushInit() {
     }
     if (pushRetryTask) pushRetryTask.cancel();
     pushModel = found.model;
+    pushIndex = found.index;
     pushCS = new LiveAPI("control_surfaces " + found.index);
     post("Puxi: Push " + pushModel + " on control_surfaces " + found.index +
          (pushModel === 2 ? " (Push 2 support is experimental)" : "") + "\n");
-    if (pushModel === 2) { // a Push 3 turned on later takes over (see pushUpgradeProbe)
-        if (!pushUpgradeTask) pushUpgradeTask = new Task(pushUpgradeProbe);
-        pushUpgradeTask.schedule(PUSH_PROBE_MS);
-    }
 
     // View navigation lives on the dedicated Octave/Page buttons (NOT the Up/Down/
     // Left/Right arrows, which keep their native function): Octave +/- = note banks
@@ -532,6 +531,12 @@ function pushInit() {
 
     // 8x8 pad matrix: LED output (send_value col row color) + press input.
     pushMatrixId = extractId(pushCS.call("get_control", "Button_Matrix"));
+    // pushWatch spots a rebuilt surface by a changed matrix id: only valid if asking twice
+    // for the same control gives the same id.
+    pushIdsStable = !!pushMatrixId && extractId(pushCS.call("get_control", "Button_Matrix")) === pushMatrixId;
+    if (!pushIdsStable) post("Puxi: control ids not stable, Push reconnect check off\n");
+    if (!pushWatchTask) pushWatchTask = new Task(pushWatch);
+    pushWatchTask.schedule(PUSH_PROBE_MS);
     if (pushMatrixId) {
         pushMatrix = new LiveAPI("id " + pushMatrixId);            // for send_value
         var mObs = new LiveAPI(onPadMatrix, "id " + pushMatrixId); // for presses
@@ -619,26 +624,59 @@ function pushInit() {
     pushObs.push(focusObs);
 }
 
-// Bound to a Push 2 surface: a Push 3 may still connect (its surface only appears once
-// it's turned on), and the Push 2 surface may have no hardware behind it (see
-// findPushSurface). Switch to the Push 3 as soon as it shows up.
-function pushUpgradeProbe() {
-    if (pushModel !== 2) return;
-    if (findPushSurface(true).model !== 3) { pushUpgradeTask.schedule(PUSH_PROBE_MS); return; }
-    post("Puxi: Push 3 connected, switching to it\n");
-    pushTeardown();
-    pushInit();
+// While bound, every PUSH_PROBE_MS. Live rebuilds a control surface when its hardware is
+// turned off and on, wakes from sleep, or the surface list changes; the controls Puxi holds
+// then belong to nothing and every grab fails (seen on hardware: "Invalid arguments:
+// release_control <ButtonElement …>"). Spot it by asking the surface for its pad matrix
+// again. Same id elsewhere = the same Push at a new index (another surface came or went):
+// just follow it. Nowhere = rebuilt or turned off: bind again from scratch (pushInit then
+// polls until a Push is back). On a Push 2, also switch to a Push 3 as soon as one shows
+// up (preferred).
+function pushWatch() {
+    if (!pushCS) return;
+    if (pushIdsStable) {
+        var cs = surfaceAt(pushIndex);
+        if ((cs ? controlId(cs, "Button_Matrix") : 0) !== pushMatrixId) {
+            var moved = surfaceOwning("Button_Matrix", pushMatrixId);
+            if (moved < 0) {
+                post("Puxi: Push disconnected or rebuilt, reconnecting\n");
+                pushTeardown(true);
+                pushInit();
+                return;
+            }
+            pushIndex = moved;
+            pushCS = new LiveAPI("control_surfaces " + moved);
+        }
+    }
+    if (pushModel === 2 && findPushSurface(true).model === 3) {
+        post("Puxi: Push 3 connected, switching to it\n");
+        pushTeardown(false);
+        pushInit();
+        return;
+    }
+    pushWatchTask.schedule(PUSH_PROBE_MS);
 }
 
-// Let go of the current surface: release its grabbed controls, stop observing them, and
-// forget its handles (pushInit sets them all again).
-function pushTeardown() {
+// Let go of the current surface and forget its handles (pushInit sets them all again).
+// gone = the surface was rebuilt or removed: it rejects releases, so drop the handles
+// first and setGrabbed(false) only resets Puxi's own grab state.
+function pushTeardown(gone) {
+    if (gone) {
+        pushGrabIds = [];
+        pushMatrixId = 0;
+        pushBlockIds = [];
+        pushBlockBtns = null;
+        pushSceneBtns = null;
+        pushDeleteBtn = null;
+    }
     setGrabbed(false);
-    for (var i = 0; i < pushObs.length; i++) { try { pushObs[i].property = ""; } catch (e) {} }
+    if (!gone) for (var i = 0; i < pushObs.length; i++) { try { pushObs[i].property = ""; } catch (e) {} }
+    if (pushWatchTask) pushWatchTask.cancel();
     pushObs = [];
     pushGrabIds = [];
     pushCS = null;
     pushModel = 0;
+    pushIndex = -1;
     pushMatrix = null;
     pushMatrixId = 0;
     pushAccentId = 0;
@@ -1771,19 +1809,19 @@ function extractId(res) {
 // Returns {index, model}: model 3 = Push 3, 2 = Push 2, index -1 = none (onlyPush3: skip Push 2).
 // A Push 3 is preferred: it's the only surface with a Jogwheel. Push 2 has no jog wheel
 // but names every control Puxi drives the same way (both scripts build on Ableton's
-// shared Push code), so a surface with the core Push controls counts as a Push 2.
-// Caveat: a Push 3 setup can also hold a Push 2 surface with no hardware behind it (the
-// LocalControlSurfaceWrapper at index 0 on the dev machine), which this matches too;
-// pushUpgradeProbe() moves to the Push 3 when it connects.
-var PUSH_CORE_CONTROLS = ["Button_Matrix", "Scene_Launch_Button0", "Track_State_Button0",
-                          "Track_Select_Button0", "Accent_Button"];
+// shared Push code). Push 1 shares most names too, but has no Convert or Page buttons
+// (In/Out instead) and a different color palette, so it is NOT taken for a Push 2 (the dev
+// machine holds such a Push 1 surface, LocalControlSurfaceWrapper, with no hardware).
+var PUSH2_CONTROLS = ["Button_Matrix", "Scene_Launch_Button0", "Track_State_Button0",
+                      "Track_Select_Button0", "Accent_Button", "Convert", "Page_Left_Button",
+                      "Page_Right_Button"];
 function findPushSurface(onlyPush3) {
     var push2 = -1;
     for (var i = 0; i < 16; i++) {
         var cs = surfaceAt(i);
         if (!cs) continue;
         if (hasControl(cs, "Jogwheel")) return { index: i, model: 3 };
-        if (!onlyPush3 && push2 < 0 && isPushFamily(cs)) push2 = i;
+        if (!onlyPush3 && push2 < 0 && isPush2(cs)) push2 = i;
     }
     return { index: push2, model: push2 < 0 ? 0 : 2 };
 }
@@ -1795,13 +1833,24 @@ function surfaceAt(i) {
     } catch (e) { return null; }
 }
 
-function hasControl(cs, name) {
-    try { return extractId(cs.call("get_control", name)) !== 0; } catch (e) { return false; }
+function controlId(cs, name) {
+    try { return extractId(cs.call("get_control", name)); } catch (e) { return 0; }
 }
 
-function isPushFamily(cs) {
-    for (var i = 0; i < PUSH_CORE_CONTROLS.length; i++)
-        if (!hasControl(cs, PUSH_CORE_CONTROLS[i])) return false;
+function hasControl(cs, name) { return controlId(cs, name) !== 0; }
+
+// Index of the surface whose control `name` has this id, -1 if none does any more.
+function surfaceOwning(name, id) {
+    for (var i = 0; i < 16; i++) {
+        var cs = surfaceAt(i);
+        if (cs && controlId(cs, name) === id) return i;
+    }
+    return -1;
+}
+
+function isPush2(cs) {
+    for (var i = 0; i < PUSH2_CONTROLS.length; i++)
+        if (!hasControl(cs, PUSH2_CONTROLS[i])) return false;
     return true;
 }
 
