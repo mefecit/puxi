@@ -183,6 +183,7 @@ function init() {
     try { scanDrumRack(); } catch (e) { post("Puxi drum scan err: " + e + "\n"); }
     sendFullState();
     post("Puxi engine ready\n");
+    post("Puxi TEST BUILD for Push 2, not a release\n"); // TEST BUILD
     try { pushInit(); } catch (e) { post("Push init failed: " + e + "\n"); }
     try { initDrumObservers(); } catch (e) { post("Puxi drum obs err: " + e + "\n"); }
     // Reopening a Set races the engine/GUI/Push load order: the grab happens but the
@@ -416,6 +417,9 @@ var followTouchPending = false;
 var pushPlayColN = [-1, -1, -1, -1, -1, -1, -1, -1]; // per visible row: pad col lit as that row's playhead (-1 none)
 var pushAfterGrab = null;   // deferred LED draw (grab must settle before send_value)
 var pushRetryTask = null;   // poll for the Push until it connects (turned on after load)
+var pushModel = 0;          // 3 = Push 3, 2 = Push 2 (experimental), 0 = none yet
+var pushUpgradeTask = null; // bound to a Push 2: keep polling for a Push 3 (preferred)
+var PUSH_PROBE_MS = 2500;   // polling period of both probes
 var PUSH_ACCENT_LED = 127;  // Accent button LED value when active (full)
 var PUSH_ACCENT_LED_DIM = 5; // Accent button LED when inactive: dim, not off
 var accentLatched = false;  // Accent toggled on (every pad-entered step = max vel)
@@ -476,21 +480,31 @@ var thisDeviceId = 0;
 
 function pushInit() {
     if (pushCS) return; // already initialized
-    var idx = findPushSurface();
-    if (idx < 0) {
+    var found = findPushSurface();
+    if (!surfaceReportDone) { // TEST BUILD
+        surfaceReportDone = true;
+        try { reportSurfaces(); } catch (e) { post("Puxi report failed: " + e + "\n"); }
+    }
+    if (found.index < 0) {
         // The Push may be off / not yet connected. Keep polling so turning it ON after
         // Puxi is already on the track still hands the pads to Puxi (not the native drum
         // view). Cheap probe; stops as soon as the Push is found.
         if (!pushRetryTask) {
-            post("Puxi: Push not found — retrying until it connects\n");
+            post("Puxi: no Push found — retrying until one connects\n");
             pushRetryTask = new Task(pushInit);
         }
-        pushRetryTask.schedule(2500);
+        pushRetryTask.schedule(PUSH_PROBE_MS);
         return;
     }
     if (pushRetryTask) pushRetryTask.cancel();
-    pushCS = new LiveAPI("control_surfaces " + idx);
-    post("Puxi: Push on control_surfaces " + idx + "\n");
+    pushModel = found.model;
+    pushCS = new LiveAPI("control_surfaces " + found.index);
+    post("Puxi: Push " + pushModel + " on control_surfaces " + found.index +
+         (pushModel === 2 ? " (Push 2 support is experimental)" : "") + "\n");
+    if (pushModel === 2) { // a Push 3 turned on later takes over (see pushUpgradeProbe)
+        if (!pushUpgradeTask) pushUpgradeTask = new Task(pushUpgradeProbe);
+        pushUpgradeTask.schedule(PUSH_PROBE_MS);
+    }
 
     // View navigation lives on the dedicated Octave/Page buttons (NOT the Up/Down/
     // Left/Right arrows, which keep their native function): Octave +/- = note banks
@@ -601,6 +615,32 @@ function pushInit() {
     var focusObs = new LiveAPI(onFocusChange, "live_set");
     focusObs.property = "appointed_device"; // fires once now with the current value
     pushObs.push(focusObs);
+}
+
+// Bound to a Push 2 surface: a Push 3 may still connect (its surface only appears once
+// it's turned on), and the Push 2 surface may have no hardware behind it (see
+// findPushSurface). Switch to the Push 3 as soon as it shows up.
+function pushUpgradeProbe() {
+    if (pushModel !== 2) return;
+    if (findPushSurface(true).model !== 3) { pushUpgradeTask.schedule(PUSH_PROBE_MS); return; }
+    post("Puxi: Push 3 connected, switching to it\n");
+    pushTeardown();
+    pushInit();
+}
+
+// Let go of the current surface: release its grabbed controls, stop observing them, and
+// forget its handles (pushInit sets them all again).
+function pushTeardown() {
+    setGrabbed(false);
+    for (var i = 0; i < pushObs.length; i++) { try { pushObs[i].property = ""; } catch (e) {} }
+    pushObs = [];
+    pushGrabIds = [];
+    pushCS = null;
+    pushModel = 0;
+    pushMatrix = null;
+    pushMatrixId = 0;
+    pushAccentId = 0;
+    pushConvertId = 0;
 }
 
 // The appointed_device value arrives as ["appointed_device", "id", <N>] — the
@@ -1725,18 +1765,88 @@ function extractId(res) {
     return 0;
 }
 
-// Find the real Push 3 control surface by index. Its index can change between
-// Live sessions; the genuine Push (RemoteControlSurfaceWrapper) has a Jogwheel,
-// the ghost LocalControlSurfaceWrapper does not.
-function findPushSurface() {
+// Find the Push control surface by index (its index can change between Live sessions).
+// Returns {index, model}: model 3 = Push 3, 2 = Push 2, index -1 = none (onlyPush3: skip Push 2).
+// A Push 3 is preferred: it's the only surface with a Jogwheel. Push 2 has no jog wheel
+// but names every control Puxi drives the same way (both scripts build on Ableton's
+// shared Push code), so a surface with the core Push controls counts as a Push 2.
+// Caveat: a Push 3 setup can also hold a Push 2 surface with no hardware behind it (the
+// LocalControlSurfaceWrapper at index 0 on the dev machine), which this matches too;
+// pushUpgradeProbe() moves to the Push 3 when it connects.
+var PUSH_CORE_CONTROLS = ["Button_Matrix", "Scene_Launch_Button0", "Track_State_Button0",
+                          "Track_Select_Button0", "Accent_Button"];
+function findPushSurface(onlyPush3) {
+    var push2 = -1;
     for (var i = 0; i < 16; i++) {
-        try {
-            var cs = new LiveAPI("control_surfaces " + i);
-            if (!cs || parseInt(cs.id, 10) === 0) continue;
-            if (extractId(cs.call("get_control", "Jogwheel"))) return i;
-        } catch (e) {}
+        var cs = surfaceAt(i);
+        if (!cs) continue;
+        if (hasControl(cs, "Jogwheel")) return { index: i, model: 3 };
+        if (!onlyPush3 && push2 < 0 && isPushFamily(cs)) push2 = i;
     }
-    return -1;
+    return { index: push2, model: push2 < 0 ? 0 : 2 };
+}
+
+function surfaceAt(i) {
+    try {
+        var cs = new LiveAPI("control_surfaces " + i);
+        return (cs && parseInt(cs.id, 10) !== 0) ? cs : null;
+    } catch (e) { return null; }
+}
+
+function hasControl(cs, name) {
+    try { return extractId(cs.call("get_control", name)) !== 0; } catch (e) { return false; }
+}
+
+function isPushFamily(cs) {
+    for (var i = 0; i < PUSH_CORE_CONTROLS.length; i++)
+        if (!hasControl(cs, PUSH_CORE_CONTROLS[i])) return false;
+    return true;
+}
+
+// TEST BUILD: a one-time report of every control surface, for Push 2 testers. It lists
+// which of Puxi's controls each surface lacks, then all its control names, 10 per line,
+// so a copy of the Max window says how that Push names its controls.
+var PUXI_CONTROLS = [["Button_Matrix"], ["Accent_Button"], ["Convert", "Convert_Button"],
+    ["Double_Button"], ["Repeat_Button", "Repeat"], ["Duplicate_Button"], ["Delete_Button", "Delete"],
+    ["Global_Mute_Button"], ["Global_Solo_Button"], ["Octave_Up", "Octave_Up_Button"],
+    ["Octave_Down", "Octave_Down_Button"], ["Page_Left", "Page_Left_Button"],
+    ["Page_Right", "Page_Right_Button"], ["Track_Control_0"], ["Track_Control_Touch_0"],
+    ["Track_Control_7"], ["Track_State_Button0"], ["Track_Select_Button0"], ["Track_Select_Button7"],
+    ["Scene_Launch_Button0"], ["Scene_Launch_Button7"], ["Jogwheel"]];
+var surfaceReportDone = false;
+
+function reportSurfaces() {
+    var app = new LiveAPI("live_app");
+    post("Puxi report: Live " + app.call("get_major_version") + "." + app.call("get_minor_version") +
+         "." + app.call("get_bugfix_version") + "\n");
+    var count = 0;
+    for (var i = 0; i < 16; i++) {
+        var cs = surfaceAt(i);
+        if (!cs) continue;
+        count++;
+        var names = controlNames(cs);
+        post("Puxi report: control_surfaces " + i + ", type " + cs.type + ", " + names.length + " controls\n");
+        var missing = [];
+        for (var g = 0; g < PUXI_CONTROLS.length; g++) {
+            var found = false;
+            for (var k = 0; k < PUXI_CONTROLS[g].length; k++)
+                if (names.indexOf(PUXI_CONTROLS[g][k]) >= 0) found = true;
+            if (!found) missing.push(PUXI_CONTROLS[g][0]);
+        }
+        post("Puxi report:   missing: " + (missing.length ? missing.join(" ") : "none") + "\n");
+        for (var n = 0; n < names.length; n += 10)
+            post("Puxi report:   " + names.slice(n, n + 10).join(" ") + "\n");
+    }
+    if (!count) post("Puxi report: no control surfaces\n");
+}
+
+// get_control_names answers "control_names N control <name> control <name> … done".
+function controlNames(cs) {
+    var res = cs.call("get_control_names"), names = [];
+    if (!res || typeof res === "string") return names;
+    for (var i = 0; i + 1 < res.length; i++)
+        if (res[i] === "control") names.push(String(res[i + 1]));
+    return names;
 }
 
 // Observer callback: the global groove amount changed (or its initial value). Drives the

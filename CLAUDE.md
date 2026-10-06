@@ -121,6 +121,20 @@ Discovered/tested on the dev machine. Recipe for the arrows (also applies to the
   (the real Push = `RemoteControlSurfaceWrapper`; index 0 is a ghost
   `LocalControlSurfaceWrapper` profile). `findPushSurface()` finds it by the presence
   of a **Jogwheel** (the index can change; the ghost has no Jogwheel).
+- **Push 2 (experimental, branch `push2-test`, 2026-10-06).** A Push 2 user reported "Push not
+  found": Push 2 has no Jogwheel. Its script names every control Puxi drives exactly like Push 3
+  (both build on Ableton's shared `pushbase`: `Button_Matrix`, `Scene_Launch_Button0..7` with 0 =
+  bottom, `Track_State/Select_Button0..7`, `Track_Control_N`, `Octave_Up/Down_Button`,
+  `Page_Left/Right_Button`, `Convert`, … — checked against the decompiled Live 12 scripts), and its
+  pad palette uses the same scheme (`Push2/colors.py`: 122 white, 124 dark gray, 125 blue, 126
+  green, 127 red, shades of base color c at `(c−1)·2 + 64 + 1|2` — which is where the `VEL_LADDER`
+  values sit). So `findPushSurface()` now returns `{index, model}`: a Jogwheel surface = Push 3
+  (preferred); otherwise a surface with all of `PUSH_CORE_CONTROLS` = Push 2. ⚠️ The dev machine's
+  ghost at index 0 **is** such a Push 2 surface with no hardware behind it, so with the Push 3 off
+  at load Puxi binds to the ghost; `pushUpgradeProbe` keeps polling for a Jogwheel surface and
+  switches (`pushTeardown` + `pushInit`) when the Push 3 turns on. The test build also prints a
+  one-time `Puxi report:` of every surface (type, Puxi controls missing, all control names) and a
+  "TEST BUILD" banner — strip both (`// TEST BUILD` markers) before merging to main.
 - **Deferred connection (Push turned on afterward)**: if `findPushSurface()` finds
   nothing at init (Push off/not connected), `pushInit` **does not give up** — it
   **re-probes every 2.5 s** (`pushRetryTask`) until Push connects, then initializes
