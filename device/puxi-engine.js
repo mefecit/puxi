@@ -1255,19 +1255,43 @@ function stopDupBlink() {
 // you SEE the ratchet on the pad. Replaces the steady green playhead for that pad. The flash
 // tasks all fire within one step; they are kept referenced (cancelled at the next tick / on a
 // full repaint / stop) so Max doesn't GC them before they run.
+// A strobe must never outlive its note. Two races left a pad in a stale flash state:
+// (1) the note is deleted or un-ratcheted mid-step while its flash tasks are still pending, and
+// (2) the next tick (or a stop) cancels a strobe before its final OFF has run — which happens
+// whenever a step's work runs late (Push 3 standalone runs Puxi on a slower CPU). Together:
+// a pad lit with no step, or a note's pad left dark. So each flash re-checks its cell when it
+// fires (same view, still a ratcheted audible in-loop note — else it paints the real color),
+// and cancelling repaints every cell that had flashes pending with its real color.
 var flashTasks = [];
+var flashCells = {};  // "t,s" -> true: cells with flash tasks since the last cancelFlashes()
 function cancelFlashes() {
     for (var i = 0; i < flashTasks.length; i++) flashTasks[i].cancel();
     flashTasks = [];
+    var cells = flashCells;
+    flashCells = {};
+    for (var key in cells) {
+        var ts = key.split(",");
+        var t = Number(ts[0]), s = Number(ts[1]);
+        pushSetPad(t, s, pattern[noteBase + t][stepBase + s]);
+    }
+}
+function isStrobing(r, step) {
+    return pattern[r][step] > 0 && ratchet[r][step] > 1 && audible(r) &&
+           step >= eLoopS(r) && step < eLoopE(r);
 }
 function scheduleFlash(t, s, color, delay) {
+    var nb = noteBase, sb = stepBase;
     var tk = new Task(function () {
         if (!pushGrabbed || !pushMatrix) return;
+        if (noteBase !== nb || stepBase !== sb) return; // view moved: the full repaint owns the pads
+        var r = nb + t, step = sb + s;
+        if (!isStrobing(r, step)) { pushSetPad(t, s, pattern[r][step]); return; } // real color instead
         pushMatrix.call("send_value", s, pushRow(t), color);
         probShown[t][s] = -1; // let the shimmer resend this pad once the flash is over
     });
     tk.schedule(delay);
     flashTasks.push(tk);
+    flashCells[t + "," + s] = true;
 }
 function startRatchetFlash(t, s, R, stepMs, r, step) {
     var slot = stepMs / R;

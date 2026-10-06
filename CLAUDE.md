@@ -430,6 +430,13 @@ Discovered/tested on the dev machine. Recipe for the arrows (also applies to the
   strobe (2026-07-03).** A ratcheted note **flashes R times per step** between its brightness and
   off (`startRatchetFlash`: `scheduleFlash` on at `k·slot`, off at `+slot/2`; Tasks in
   `flashTasks`, cancelled at the top of `tick`/on repaint/on stop via `cancelFlashes`).
+  ⚠️ **A strobe must not outlive its note (fixed 2026-10-07).** Two races left stale pads: a note
+  deleted/un-ratcheted mid-step while its flash tasks were pending, and `cancelFlashes` (next tick
+  or stop) killing a strobe before its final OFF when a step's work runs late (Push 3 standalone's
+  slower CPU; reproduced on a simulated clock from ~12 ms per step at 8 hits). Result: a pad lit
+  with no step, or a note's pad left dark after stop. Now each flash re-checks its cell when it
+  fires (`isStrobing`: same view, still a ratcheted audible in-loop note — else `pushSetPad` paints
+  the real color), and `cancelFlashes` repaints every cell that had flashes pending (`flashCells`).
   **Persistent indicator**: `pushRatchetIdle(S, stepMs)` (called in `tick` after
   `pushSetPlayheads`) strobes **every** visible ratcheted note **every step** (`RATCHET_IDLE_EVERY
   = 1`, tunable) → you spot it **before** the playhead; the cell under the playhead is left to
