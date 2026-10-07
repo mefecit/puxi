@@ -222,7 +222,13 @@ Puxi takes over Push only while it is the **selected** (blue-hand) device. Selec
 the Puxi device to control it; select another device to return the controls to Live.
 
 You can turn on or connect Push **after** loading the Set. Puxi detects it and takes
-over the pads automatically — no need to reload the device.
+over the pads automatically — no need to reload the device. The same goes if Push is
+turned off and on again, or the computer wakes from sleep: Puxi reconnects on its own
+within a few seconds. (If Live itself doesn't bring Push back, select it again in
+Live's Settings → Link, Tempo & MIDI.)
+
+Everything in this section also applies to **Push 2**, with the differences listed
+under [Push 2](#push-2) below.
 
 ### Pads (8 × 8)
 
@@ -394,6 +400,18 @@ Note: for rows that have locks, Puxi drives those two parameters during playback
 rewrites them on every step) — do not also move them by hand or by automation at the
 same time. The labels stay "Lock 1" / "Lock 2" and the value is normalized 0–127:
 Push does not allow showing the parameter's actual name or units.
+
+### Push 2
+
+Puxi also works with Push 2: same pads, colors, encoders and buttons. The
+differences:
+
+- The two rows of buttons around the display keep Push 2's own lights: the Follow and
+  shown-block indicators are not displayed there (Push 2 repaints those rows itself).
+  The block lights still appear while you hold Duplicate or Delete. Follow still
+  shows on the display (encoder 1), and the Live GUI shows the current block.
+- There is no standalone mode (Push 2 always runs with a computer).
+- Push 1 is not supported.
 
 ### Push 3 standalone (no computer)
 

@@ -16,7 +16,8 @@ Grab the latest **`Puxi.amxd`** from the
 your Sets can always find it), and drag it from there onto a MIDI track, before your
 Drum Rack. That's it — see the [manual](docs/MANUAL.md) for everything else.
 
-> **Status:** v1.0.0, feature-complete. Tested with Live 12.4 and Push 3.
+> **Status:** v1.0.1, feature-complete. Tested with Live 12.4 and Push 3; Push 2 confirmed
+> working by a Push 2 owner.
 
 ## Features
 
@@ -86,7 +87,7 @@ the patch with:
 python3 tools/build-amxd.py
 ```
 
-Requires Ableton Live 12 with Max 8.6+ (bundled). Push 3 is optional but supported.
+Requires Ableton Live 12 with Max 8.6+ (bundled). Push 3 or Push 2 is optional but supported.
 
 ## FAQ
 
@@ -94,12 +95,15 @@ Requires Ableton Live 12 with Max 8.6+ (bundled). Push 3 is optional but support
 as an add-on for Standard). Puxi is a single `.amxd`: keep it in your User Library and
 drop it on the track with your Drum Rack.
 
-**Do I need a Push?** No. The mouse GUI does everything. A Push 3 adds hands-on
-pads, encoders and dedicated buttons.
+**Do I need a Push?** No. The mouse GUI does everything. A Push 3 or Push 2 adds
+hands-on pads, encoders and dedicated buttons.
 
 **Does it work on Push 3 standalone?** Yes — transfer the device to the Push and it
-runs without a computer. Built and tested on Push 3; Push 2 is untested and
-unsupported.
+runs without a computer.
+
+**And on Push 2?** Yes, since v1.0.1 (confirmed by a Push 2 owner). Puxi was built on
+Push 3, so a few indicator lights stay Push 2's own (see the manual). Push 1 is not
+supported.
 
 **How much?** Free. No pro version, no unlock, no email wall.
 

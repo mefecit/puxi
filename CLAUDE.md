@@ -119,8 +119,52 @@ Discovered/tested on the dev machine. Recipe for the arrows (also applies to the
 
 - Push 3 is a **control surface**: `new LiveAPI("control_surfaces N")`. On the dev machine, **N = 1**
   (the real Push = `RemoteControlSurfaceWrapper`; index 0 is a ghost
-  `LocalControlSurfaceWrapper` profile). `findPushSurface()` finds it by the presence
-  of a **Jogwheel** (the index can change; the ghost has no Jogwheel).
+  `LocalControlSurfaceWrapper` profile — a Push 1 script surface, see the Push 2 bullet). `findPushSurface()` finds it by a
+  **Jogwheel** plus the core Push controls (the index can change; the ghost has no Jogwheel).
+- **Push 2 (v1.0.1, 2026-10-07; confirmed working on a Push 2 by a user, pre-release
+  `push2-test-1`).** A Push 2 user reported "Push not found": Push 2 has no Jogwheel. Its script names every control Puxi drives exactly like Push 3
+  (both build on Ableton's shared `pushbase`: `Button_Matrix`, `Scene_Launch_Button0..7` with 0 =
+  bottom, `Track_State/Select_Button0..7`, `Track_Control_N`, `Octave_Up/Down_Button`,
+  `Page_Left/Right_Button`, `Convert`, … — checked against the decompiled Live 12 scripts), and its
+  pad palette uses the same scheme (`Push2/colors.py`: 122 white, 124 dark gray, 125 blue, 126
+  green, 127 red, shades of base color c at `(c−1)·2 + 64 + 1|2` — which is where the `VEL_LADDER`
+  values sit). So `findPushSurface()` now returns `{index, model}`: a surface with a Jogwheel **and** the core
+  Push controls = Push 3 (preferred; `isPush3` — the original Arturia KeyLab Essential script
+  names an encoder `Jogwheel` too); otherwise a surface with all of `PUSH2_CONTROLS` = Push 2. That list includes
+  `Convert` + `Page_Left/Right_Button` on purpose: the dev machine's ghost at index 0 turned out to
+  be a **Push 1** script surface (its report: `Display_Line_0..3`, `In_Button`/`Out_Button`, touch
+  strip, no Convert/Page; present in some states with the Push 3 off, absent in others) and a
+  looser check bound to it. Push 1 = a different fixed palette + no Convert → not supported (would
+  need its own color table, checked on hardware). **Push 2 screen rows stay native**: its script
+  repaints both rows in device mode (TrackList on `Track_Select_Button*`, DeviceNavigation on
+  `Track_State_Button*`), so the Follow and block indicators would go stale → `updateFollowLed` is
+  skipped and `updateBlockLeds` paints only while Duplicate/Delete hold the row grabbed.
+- **Rebuilt surfaces / reconnect (`pushWatch`, v1.0.1).** ⚠️ Live **rebuilds** a
+  control surface mid-session (seen on hardware when the Push 3 was turned on: every held control
+  id became foreign to the surface → `Invalid arguments: 'release_control <ButtonElement …>'`, and
+  Puxi stayed dead until reloaded; a Push power-cycle or sleep/wake can do the same). Why (Live's
+  Max bridge, decompiled `_MxDCore/MxDCore.py` `prepare_control_surface_update`): when control
+  surfaces change, every Max device whose LiveAPI paths touched `control_surfaces` gets its whole
+  device context **released** (observers uninstalled, grabs/MIDI released) and the device
+  refreshed; the negative-id table is reset to `{0: None}` (ids handed out again from −1) and
+  the surface wrappers are rebuilt. Symptom on hardware right after a power-on rebind: `call
+  grab_control <ControlProxy …>: no valid object set` (our surface handle had id 0) and native
+  pads. `pushStaleReason()` checks three signals: our surface handle's id is 0, a fresh lookup of
+  the index gives another surface id, or other matrix/Accent ids. `onFocusChange` runs the same
+  check before grabbing or releasing (selecting Puxi again then always recovers: a dead binding
+  schedules `pushWatch` at once instead of touching dead controls). While bound,
+  `pushWatch` (every 2.5 s) re-asks the bound index for the `Button_Matrix` **and** `Accent_Button`
+  ids (`holdsBoundControls`; two ids because a control-surface update makes Live hand ids out again
+  from −1 in request order, so one id alone can match by chance): same ids = fine; the ids on
+  another index = the same Push moved (follow it: new `pushIndex`/`pushCS`); nowhere = rebuilt or
+  off → `pushTeardown(true)` (drops the handles **without** release calls, which a rebuilt surface
+  rejects) + `pushInit()` (polls until a Push is back). On a Push 2 it also switches to a Push 3 when
+  one appears (`pushTeardown(false)` releases normally). Guarded by `pushIdsStable` (asking twice for
+  `Button_Matrix` must give the same id, otherwise the check is skipped instead of reconnecting every
+  tick). The "no Push found" line lists what Live runs (`surfaceTypes()`: a control surface's LiveAPI
+  `type` is its **script name** — "Push3", "Push2", "Push" = Push 1, other brands). The Push 2 test
+  build (pre-release `push2-test-1`, branch `push2-test`) also printed a full per-surface report of
+  control names; that diagnostic was removed for the release.
 - **Deferred connection (Push turned on afterward)**: if `findPushSurface()` finds
   nothing at init (Push off/not connected), `pushInit` **does not give up** — it
   **re-probes every 2.5 s** (`pushRetryTask`) until Push connects, then initializes
@@ -166,7 +210,8 @@ Discovered/tested on the dev machine. Recipe for the arrows (also applies to the
   grabbed button would stay **hijacked** there. **But** we still drive their **LED** via
   `send_value` **without a grab** (`updateFollowLed`/`updateBlockLeds`, called in
   `pushRenderGrid`, guarded by `pushGrabbed`): **Live does not repaint** these buttons in
-  device view, so our LEDs hold (**verified on hardware, Live 12.4**) → we keep the Follow +
+  device view on **Push 3**, so our LEDs hold (**verified on hardware, Live 12.4**; Push 2's
+  script does repaint them → left native there, see the Push 2 bullet) → we keep the Follow +
   block indicators **as before**, without stealing the click. The Follow **toggle** goes
   through **encoder 1** (touch/turn) + the GUI; block **paging** through the **< Page / Page >**
   buttons + the GUI. (If Live ever starts repainting them and overwriting our LEDs, remove these 2 calls.)
